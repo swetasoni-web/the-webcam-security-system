@@ -3,15 +3,12 @@
 
 services:
   - type: web
-    name: the-webcam-backend
+    name: the-webcam-security-system
     env: python
     region: oregon
     plan: free
-    buildCommand: |
-      pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
-      pip install --no-cache-dir -r backend/requirements.txt
-    startCommand: |
-      cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install --no-cache-dir -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -28,10 +25,4 @@ services:
       - key: DEFAULT_VIEWER_PASSWORD
         sync: false
       - key: CORS_ORIGINS
-        sync: false
-# Note: Disks require Render paid plan. For free tier, SQLite runs in local ephemeral storage.
-    # disk:
-    #   name: the-webcam-data
-    #   mountPath: /opt/render/project/src/backend/data
-    #   sizeGB: 1
-
+        value: "*"
