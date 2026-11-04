@@ -1,0 +1,33 @@
+# Render.com deployment configuration for The WebCam
+# See: https://render.com/docs/render-yaml
+
+services:
+  - type: web
+    name: the-webcam-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      pip install -r backend/requirements.txt
+    startCommand: |
+      cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEFAULT_ADMIN_PASSWORD
+        sync: false
+      - key: DEFAULT_OPERATOR_PASSWORD
+        sync: false
+      - key: DEFAULT_VIEWER_PASSWORD
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+    disk:
+      name: the-webcam-data
+      mountPath: /opt/render/project/src/backend/data
+      sizeGB: 1
+
