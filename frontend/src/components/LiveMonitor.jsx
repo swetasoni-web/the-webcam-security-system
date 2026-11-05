@@ -42,6 +42,11 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   const localVideoRef = useRef(null);
   const overlayCanvasRef = useRef(null);
   const localStreamRef = useRef(null);
+  const facingModeRef = useRef(facingMode);
+
+  useEffect(() => {
+    facingModeRef.current = facingMode;
+  }, [facingMode]);
 
   const activeCamera = cameras.find(c => c.id === Number(selectedCameraId)) || cameras[0];
 
@@ -275,6 +280,10 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       const boxW = x2 - x1;
       const boxH = y2 - y1;
 
+      // Invert X when front selfie camera is mirrored via CSS scaleX(-1)
+      const isMirrored = isDeviceCamActive && (facingModeRef.current === 'user');
+      const renderX = isMirrored ? (width - x2) : x1;
+
       const isAuth = det.is_authorized === true;
       const isAlert = det.identity === 'UNAUTHORIZED' || det.is_authorized === false;
 
@@ -284,7 +293,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2.5;
-      ctx.strokeRect(x1, y1, boxW, boxH);
+      ctx.strokeRect(renderX, y1, boxW, boxH);
 
       // Label text
       let label = `${det.class_name.toUpperCase()} ${Math.round((det.confidence || 0) * 100)}%`;
@@ -295,16 +304,42 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       ctx.font = 'bold 12px sans-serif';
       const textWidth = ctx.measureText(label).width;
       ctx.fillStyle = strokeColor;
-      ctx.fillRect(x1, Math.max(0, y1 - 22), textWidth + 12, 22);
+      ctx.fillRect(renderX, Math.max(0, y1 - 22), textWidth + 12, 22);
 
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(label, x1 + 6, Math.max(15, y1 - 6));
+      ctx.fillText(label, renderX + 6, Math.max(15, y1 - 6));
+    });
+
+    // Draw Face Target Overlays
+    const faces = res.faces || [];
+    faces.forEach((f) => {
+      if (!f.bbox || f.bbox.length < 4) return;
+      const [fx1, fy1, fx2, fy2] = f.bbox.map((v, i) => i % 2 === 0 ? v * scaleX : v * scaleY);
+      const fBoxW = fx2 - fx1;
+      const fBoxH = fy2 - fy1;
+      const isMirrored = isDeviceCamActive && (facingModeRef.current === 'user');
+      const fRenderX = isMirrored ? (width - fx2) : fx1;
+
+      const isKnown = f.is_authorized === true;
+      const faceColor = isKnown ? '#10B981' : '#F59E0B'; // Emerald if authorized, Amber if unrecognized
+
+      ctx.save();
+      ctx.strokeStyle = faceColor;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(fRenderX, fy1, fBoxW, fBoxH);
+      ctx.restore();
+
+      const faceLabel = `👤 ${f.identity || 'Person'} (${Math.round((f.confidence || 0) * 100)}%)`;
+      ctx.font = '10px monospace';
+      ctx.fillStyle = faceColor;
+      ctx.fillText(faceLabel, fRenderX, Math.max(12, fy1 - 4));
     });
 
     // Top status indicator on canvas
     ctx.font = 'bold 12px monospace';
     ctx.fillStyle = '#00F0FF';
-    ctx.fillText(`AI INFERENCE: ${res.inference_ms || 0}ms | DETECTIONS: ${detections.length}`, 16, 26);
+    ctx.fillText(`AI INFERENCE: ${res.inference_ms || 0}ms | DETECTIONS: ${detections.length} | FACES: ${faces.length}`, 16, 26);
   };
 
   const toggleStream = async () => {

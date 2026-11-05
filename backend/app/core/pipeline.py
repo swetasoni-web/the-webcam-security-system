@@ -177,19 +177,19 @@ class SurveillancePipeline:
                 {
                     "track_id": t.track_id,
                     "class_name": t.class_name,
-                    "confidence": t.confidence,
+                    "confidence": getattr(t, "confidence", 0.85),
                     "bbox": [int(x) for x in t.bbox],
-                    "identity": t.identity,
-                    "identity_confidence": t.identity_confidence,
-                    "is_authorized": t.is_authorized
+                    "identity": getattr(t, "identity", "Unknown"),
+                    "identity_confidence": getattr(t, "identity_confidence", 0.0),
+                    "is_authorized": getattr(t, "is_authorized", False)
                 } for t in tracks
             ],
             "faces": [
                 {
                     "bbox": [int(x) for x in f.get("bbox", [])],
-                    "identity": f.get("identity"),
-                    "confidence": f.get("confidence"),
-                    "is_authorized": f.get("is_authorized")
+                    "identity": f.get("name", "Unknown"),
+                    "confidence": f.get("confidence", 0.0),
+                    "is_authorized": f.get("is_known", False)
                 } for f in face_results
             ],
             "zone_events": zone_events,

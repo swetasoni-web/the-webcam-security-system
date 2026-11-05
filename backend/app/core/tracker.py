@@ -5,10 +5,11 @@ from typing import List, Dict, Any, Optional, Tuple
 class Track:
     """Represents a single tracked entity across consecutive video frames."""
 
-    def __init__(self, track_id: int, class_name: str, bbox: List[int]):
+    def __init__(self, track_id: int, class_name: str, bbox: List[int], confidence: float = 0.85):
         self.track_id = track_id
         self.class_name = class_name
         self.bbox = bbox
+        self.confidence = float(confidence or 0.85)
         self.trajectory: List[Tuple[int, int]] = []
         
         self.first_seen_time = time.time()
@@ -23,6 +24,18 @@ class Track:
 
         self._update_centroid()
 
+    @property
+    def identity(self) -> str:
+        return self.identity_name or "Unknown"
+
+    @property
+    def identity_confidence(self) -> float:
+        return 0.9 if self.is_known else 0.0
+
+    @property
+    def is_authorized(self) -> bool:
+        return bool(self.is_known)
+
     def _update_centroid(self) -> None:
         x1, y1, x2, y2 = self.bbox
         cx = int((x1 + x2) / 2)
@@ -35,11 +48,13 @@ class Track:
         if len(self.trajectory) > 50:
             self.trajectory.pop(0)
 
-    def update(self, bbox: List[int], class_name: Optional[str] = None) -> None:
+    def update(self, bbox: List[int], class_name: Optional[str] = None, confidence: Optional[float] = None) -> None:
         """Update track with newly observed detection."""
         self.bbox = bbox
         if class_name:
             self.class_name = class_name
+        if confidence is not None:
+            self.confidence = float(confidence)
         self.last_seen_time = time.time()
         self.time_since_update = 0
         self.hits += 1
@@ -58,12 +73,15 @@ class Track:
         return {
             "track_id": self.track_id,
             "class_name": self.class_name,
+            "confidence": getattr(self, "confidence", 0.85),
             "bbox": self.bbox,
             "centroid": self.centroid,
             "footstep": self.footstep,
             "dwell_time": self.dwell_time_seconds,
             "hits": self.hits,
+            "identity": self.identity,
             "identity_name": self.identity_name or "Unknown",
+            "is_authorized": self.is_authorized,
             "is_known": self.is_known if self.is_known is not None else False,
             "trajectory": self.trajectory[-15:],  # Return recent 15 points
         }
@@ -146,7 +164,7 @@ class CentroidIoUTracker:
             matched_trk = active_tracks[trk_idx]
             det = detections[det_idx]
 
-            matched_trk.update(det["bbox"], det.get("class_name"))
+            matched_trk.update(det["bbox"], det.get("class_name"), confidence=det.get("confidence"))
             matched_tracks.add(matched_trk.track_id)
             matched_detections.add(det_idx)
 
@@ -171,7 +189,8 @@ class CentroidIoUTracker:
         trk = Track(
             track_id=self.next_track_id,
             class_name=det.get("class_name", "object"),
-            bbox=det["bbox"]
+            bbox=det["bbox"],
+            confidence=det.get("confidence", 0.85)
         )
         self.tracks[self.next_track_id] = trk
         self.next_track_id += 1

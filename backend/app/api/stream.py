@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from typing import Generator, Optional
 from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -137,8 +137,7 @@ class IngestFramePayload(BaseModel):
 @router.post("/{camera_id}/ingest_frame")
 async def ingest_frame(
     camera_id: int,
-    file: Optional[UploadFile] = File(None),
-    body: Optional[IngestFramePayload] = None,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -156,20 +155,48 @@ async def ingest_frame(
         pipe = pipeline_registry.start_pipeline(camera, db)
 
     frame = None
-    if file:
-        raw_bytes = await file.read()
-        nparr = np.frombuffer(raw_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    elif body and body.image_base64:
-        data_str = body.image_base64
-        if "," in data_str:
-            data_str = data_str.split(",", 1)[1]
+    content_type = request.headers.get("content-type", "")
+
+    if "application/json" in content_type:
         try:
-            raw_bytes = base64.b64decode(data_str)
-            nparr = np.frombuffer(raw_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            body = await request.json()
+            data_str = body.get("image_base64", "")
+            if "," in data_str:
+                data_str = data_str.split(",", 1)[1]
+            if data_str:
+                raw_bytes = base64.b64decode(data_str)
+                nparr = np.frombuffer(raw_bytes, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}")
+    elif "multipart/form-data" in content_type:
+        try:
+            form = await request.form()
+            uploaded_file = form.get("file")
+            if uploaded_file and hasattr(uploaded_file, "read"):
+                raw_bytes = await uploaded_file.read()
+                nparr = np.frombuffer(raw_bytes, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid form upload: {e}")
+    else:
+        try:
+            body = await request.json()
+            data_str = body.get("image_base64", "")
+            if "," in data_str:
+                data_str = data_str.split(",", 1)[1]
+            if data_str:
+                raw_bytes = base64.b64decode(data_str)
+                nparr = np.frombuffer(raw_bytes, np.uint8)
+                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        except Exception:
+            try:
+                raw_bytes = await request.body()
+                if raw_bytes and len(raw_bytes) > 100:
+                    nparr = np.frombuffer(raw_bytes, np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            except Exception:
+                pass
 
     if frame is None or frame.size == 0:
         raise HTTPException(status_code=400, detail="Could not decode frame from uploaded image")
