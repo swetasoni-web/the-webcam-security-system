@@ -44,20 +44,29 @@ export default function App() {
   const refreshAppData = async () => {
     if (!user) return;
     try {
-      const [cams, health, alerts] = await Promise.all([
-        api.getCameras(),
-        api.getSystemHealth(),
-        api.getAlerts({ isAcknowledged: false, limit: 100 })
-      ]);
-      setCameras(cams);
-      setHealthData(health);
-      setUnreadAlertCount(alerts.length);
-      
-      if (cams.length > 0 && !selectedCameraId) {
-        setSelectedCameraId(cams[0].id);
+      const cams = await api.getCameras();
+      if (Array.isArray(cams) && cams.length > 0) {
+        setCameras(cams);
+        if (!selectedCameraId) {
+          setSelectedCameraId(cams[0].id);
+        }
       }
     } catch (err) {
-      console.error('Failed to load initial surveillance data:', err);
+      console.warn('Failed to load cameras:', err);
+    }
+
+    try {
+      const health = await api.getSystemHealth();
+      if (health) setHealthData(health);
+    } catch (err) {
+      console.warn('Failed to load system health:', err);
+    }
+
+    try {
+      const alerts = await api.getAlerts({ isAcknowledged: false, limit: 100 });
+      if (Array.isArray(alerts)) setUnreadAlertCount(alerts.length);
+    } catch (err) {
+      console.warn('Failed to load alerts:', err);
     }
   };
 

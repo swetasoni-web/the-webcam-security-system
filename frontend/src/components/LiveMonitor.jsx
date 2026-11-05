@@ -48,7 +48,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     facingModeRef.current = facingMode;
   }, [facingMode]);
 
-  const activeCamera = cameras.find(c => c.id === Number(selectedCameraId)) || cameras[0];
+  const activeCamera = cameras.find(c => c.id === Number(selectedCameraId)) || cameras[0] || { id: 1, name: 'Hardware Webcam', source_type: 'WEBCAM' };
 
   // Poll real-time telemetry every 1000ms when not using device camera
   useEffect(() => {
@@ -195,7 +195,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
   // Real-time AI processing loop for client device camera
   useEffect(() => {
-    if (!isDeviceCamActive || !activeCamera) return;
+    if (!isDeviceCamActive) return;
 
     let isRunning = true;
     let inFlight = false;
@@ -220,9 +220,27 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         offCtx.drawImage(video, 0, 0, 640, 480);
         const dataUrl = offscreen.toDataURL('image/jpeg', 0.65);
 
-        const res = await api.ingestFrame(activeCamera.id, { image_base64: dataUrl });
+        const targetCamId = activeCamera?.id || 1;
+        const res = await api.ingestFrame(targetCamId, { image_base64: dataUrl });
         if (isRunning && res && res.success) {
-          setLatestDetections(res.detections || []);
+          const combined = [...(res.detections || [])];
+          if (res.faces && res.faces.length > 0) {
+            res.faces.forEach((f, idx) => {
+              const alreadyHasPerson = combined.some(d => d.class_name === 'person');
+              if (!alreadyHasPerson) {
+                combined.push({
+                  track_id: `face-${idx + 1}`,
+                  class_name: 'person',
+                  confidence: f.confidence || 0.95,
+                  identity: f.identity || 'Authorized/Visitor',
+                  identity_confidence: 0.9,
+                  is_authorized: f.is_authorized,
+                  bbox: f.bbox
+                });
+              }
+            });
+          }
+          setLatestDetections(combined);
           drawHUDOverlay(res);
 
           if (res.alerts && res.alerts.length > 0) {

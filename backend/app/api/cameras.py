@@ -93,6 +93,13 @@ def list_cameras(
 ):
     """List all registered camera video sources with live operational status."""
     cameras = db.query(Camera).all()
+    if not cameras:
+        try:
+            from app.main import init_db_and_seed
+            init_db_and_seed()
+            cameras = db.query(Camera).all()
+        except Exception:
+            pass
     # Enrich with real-time status from registry
     for cam in cameras:
         pipe = pipeline_registry.get(cam.id)

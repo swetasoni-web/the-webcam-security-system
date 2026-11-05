@@ -26,6 +26,7 @@ wheels/
 
 # Virtual environments & Model weights
 *.pt
+!backend/yolov8n.pt
 *.onnx
 *.weights
 models/*.pt

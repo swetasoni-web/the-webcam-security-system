@@ -148,9 +148,24 @@ async def ingest_frame(
     """
     camera = db.query(Camera).filter(Camera.id == camera_id).first()
     if not camera:
-        raise HTTPException(status_code=404, detail="Camera not found")
+        camera = db.query(Camera).first()
 
-    pipe = pipeline_registry.get(camera_id)
+    if not camera:
+        camera = Camera(
+            name="Hardware Device Webcam",
+            source_type=CameraSourceType.WEBCAM,
+            source_url="0",
+            resolution_width=640,
+            resolution_height=480,
+            fps=24,
+            is_active=True,
+            status=CameraStatus.ONLINE
+        )
+        db.add(camera)
+        db.commit()
+        db.refresh(camera)
+
+    pipe = pipeline_registry.get(camera.id)
     if not pipe or not pipe.is_running:
         pipe = pipeline_registry.start_pipeline(camera, db)
 
