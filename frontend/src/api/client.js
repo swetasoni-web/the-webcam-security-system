@@ -107,6 +107,10 @@ export const api = {
   },
   getSnapshotUrl: (id) => `${API_BASE}/stream/${id}/snapshot`,
   getStreamTelemetry: (id) => apiFetch(`/stream/${id}/telemetry`),
+  ingestFrame: (id, payload) => apiFetch(`/stream/${id}/ingest_frame`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
 
   // Restricted Zones
   getZones: (cameraId = null) => {

@@ -286,10 +286,11 @@ export default function FaceEnroll({ user }) {
               </div>
 
               <div>
-                <label className="form-label">Portrait Photo (Frontal Face)</label>
+                <label className="form-label">Portrait Photo (Upload or Take Selfie with Camera)</label>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/*"
+                  capture="user"
                   className="form-input"
                   onChange={handleFileChange}
                   required

@@ -11,7 +11,11 @@ import {
   UserX, 
   Clock, 
   RefreshCw,
-  Plus
+  Plus,
+  Video,
+  Smartphone,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { api } from '../api/client';
 import CameraManagerModal from './CameraManagerModal';
@@ -23,11 +27,24 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   const [streamError, setStreamError] = useState(false);
   const [streamKey, setStreamKey] = useState(Date.now());
   const [isCameraModalOpen, setIsCameraModalOpen] = useState(false);
+  
+  // Universal Device Camera State (Laptop, PC, Android Phone, iOS)
+  const [isDeviceCamActive, setIsDeviceCamActive] = useState(false);
+  const [deviceCamLoading, setDeviceCamLoading] = useState(false);
+  const [deviceCamError, setDeviceCamError] = useState(null);
+  const [facingMode, setFacingMode] = useState('user'); // 'user' (Front/Selfie) | 'environment' (Rear/Main)
+  const [clientFps, setClientFps] = useState(0);
+  const [latestDetections, setLatestDetections] = useState([]);
+  const [deviceCamAlert, setDeviceCamAlert] = useState(null);
+
   const videoContainerRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const overlayCanvasRef = useRef(null);
+  const localStreamRef = useRef(null);
 
   const activeCamera = cameras.find(c => c.id === Number(selectedCameraId)) || cameras[0];
 
-  // Poll real-time telemetry every 1000ms
+  // Poll real-time telemetry every 1000ms when not using device camera
   useEffect(() => {
     if (!activeCamera) return;
 
@@ -52,6 +69,216 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     };
   }, [activeCamera?.id]);
 
+  // Clean up device camera stream on unmount
+  useEffect(() => {
+    return () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
+      }
+    };
+  }, []);
+
+  // Universal Device Camera: Start / Stop / Flip
+  const startDeviceCamera = async (mode = facingMode) => {
+    try {
+      setDeviceCamLoading(true);
+      setDeviceCamError(null);
+
+      // Stop existing tracks if switching modes
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API (getUserMedia) is not supported in this browser or environment.');
+      }
+
+      const constraints = {
+        video: {
+          facingMode: mode,
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play();
+      }
+
+      setIsDeviceCamActive(true);
+      setDeviceCamLoading(false);
+      setStreamError(false);
+    } catch (err) {
+      console.error('Error starting device camera:', err);
+      let msg = err.message;
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = 'Camera permission was denied. Please tap "Allow" or check browser settings to enable camera.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'No physical camera device was detected on this hardware.';
+      }
+      setDeviceCamError(msg);
+      setIsDeviceCamActive(false);
+      setDeviceCamLoading(false);
+    }
+  };
+
+  const stopDeviceCamera = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    setIsDeviceCamActive(false);
+    setLatestDetections([]);
+    setDeviceCamAlert(null);
+    const canvas = overlayCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  };
+
+  const toggleDeviceCamera = () => {
+    if (isDeviceCamActive) {
+      stopDeviceCamera();
+    } else {
+      startDeviceCamera(facingMode);
+    }
+  };
+
+  const flipCamera = () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    startDeviceCamera(nextMode);
+  };
+
+  // Real-time AI processing loop for client device camera
+  useEffect(() => {
+    if (!isDeviceCamActive || !activeCamera) return;
+
+    let isRunning = true;
+    let inFlight = false;
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width = 640;
+    offscreen.height = 480;
+    const offCtx = offscreen.getContext('2d');
+
+    const sendFrame = async () => {
+      if (!isRunning) return;
+      const video = localVideoRef.current;
+      if (!video || video.readyState < 2 || inFlight) {
+        if (isRunning) requestAnimationFrame(() => setTimeout(sendFrame, 100));
+        return;
+      }
+
+      inFlight = true;
+      try {
+        offCtx.drawImage(video, 0, 0, 640, 480);
+        const dataUrl = offscreen.toDataURL('image/jpeg', 0.65);
+
+        const res = await api.ingestFrame(activeCamera.id, { image_base64: dataUrl });
+        if (isRunning && res && res.success) {
+          setLatestDetections(res.detections || []);
+          drawHUDOverlay(res);
+
+          if (res.alerts && res.alerts.length > 0) {
+            setDeviceCamAlert(res.alerts[0]);
+            if (onNewAlert) {
+              res.alerts.forEach(a => onNewAlert(a));
+            }
+          }
+
+          // Compute Client FPS
+          frameCount++;
+          const now = performance.now();
+          if (now - lastFrameTime >= 1000) {
+            setClientFps(Math.round((frameCount * 1000) / (now - lastFrameTime)));
+            frameCount = 0;
+            lastFrameTime = now;
+          }
+        }
+      } catch (err) {
+        console.debug('Frame ingestion error:', err);
+      } finally {
+        inFlight = false;
+        if (isRunning) {
+          setTimeout(sendFrame, 140); // ~7 FPS balance
+        }
+      }
+    };
+
+    const timer = setTimeout(sendFrame, 300);
+
+    return () => {
+      isRunning = false;
+      clearTimeout(timer);
+    };
+  }, [isDeviceCamActive, activeCamera?.id]);
+
+  const drawHUDOverlay = (res) => {
+    const canvas = overlayCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width = canvas.clientWidth || 640;
+    const height = canvas.height = canvas.clientHeight || 480;
+    ctx.clearRect(0, 0, width, height);
+
+    const scaleX = width / 640;
+    const scaleY = height / 480;
+
+    // Draw Detections
+    const detections = res.detections || [];
+    detections.forEach((det) => {
+      if (!det.bbox || det.bbox.length < 4) return;
+      const [x1, y1, x2, y2] = det.bbox.map((v, i) => i % 2 === 0 ? v * scaleX : v * scaleY);
+      const boxW = x2 - x1;
+      const boxH = y2 - y1;
+
+      const isAuth = det.is_authorized === true;
+      const isAlert = det.identity === 'UNAUTHORIZED' || det.is_authorized === false;
+
+      let strokeColor = '#00F0FF'; // Cyber cyan
+      if (isAuth) strokeColor = '#10B981'; // Emerald
+      if (isAlert) strokeColor = '#EF4444'; // Red alert
+
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x1, y1, boxW, boxH);
+
+      // Label text
+      let label = `${det.class_name.toUpperCase()} ${Math.round((det.confidence || 0) * 100)}%`;
+      if (det.identity && det.identity !== 'Unknown') {
+        label = `${det.identity.toUpperCase()} [${Math.round((det.identity_confidence || 0) * 100)}%]`;
+      }
+
+      ctx.font = 'bold 12px sans-serif';
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillStyle = strokeColor;
+      ctx.fillRect(x1, Math.max(0, y1 - 22), textWidth + 12, 22);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(label, x1 + 6, Math.max(15, y1 - 6));
+    });
+
+    // Top status indicator on canvas
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = '#00F0FF';
+    ctx.fillText(`AI INFERENCE: ${res.inference_ms || 0}ms | DETECTIONS: ${detections.length}`, 16, 26);
+  };
+
   const toggleStream = async () => {
     if (!activeCamera) return;
     try {
@@ -69,6 +296,16 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   };
 
   const handleTakeSnapshot = () => {
+    if (isDeviceCamActive && localVideoRef.current) {
+      const snapCanvas = document.createElement('canvas');
+      snapCanvas.width = localVideoRef.current.videoWidth || 640;
+      snapCanvas.height = localVideoRef.current.videoHeight || 480;
+      const ctx = snapCanvas.getContext('2d');
+      ctx.drawImage(localVideoRef.current, 0, 0);
+      const win = window.open();
+      win.document.write(`<img src="${snapCanvas.toDataURL('image/jpeg', 0.9)}" style="max-width:100%; height:auto;" />`);
+      return;
+    }
     if (!activeCamera) return;
     const url = api.getSnapshotUrl(activeCamera.id);
     window.open(url, '_blank');
@@ -84,7 +321,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   };
 
   const feedUrl = activeCamera ? api.getVideoFeedUrl(activeCamera.id, quality) + `&t=${streamKey}` : '';
-  const currentMode = telemetry?.mode || activeCamera?.source_type || 'DEMO';
+  const currentMode = isDeviceCamActive ? 'THIS DEVICE' : (telemetry?.mode || activeCamera?.source_type || 'DEMO');
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px', padding: '0 16px 20px' }}>
@@ -123,24 +360,61 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
             {/* Mode Badge */}
             <span className={`badge ${
+              isDeviceCamActive ? 'badge-live' :
               currentMode === 'WEBCAM' || currentMode === 'LIVE' ? 'badge-live' : 
               currentMode === 'DEMO' ? 'badge-demo' : 'badge-recorded'
             }`}>
-              <span className={currentMode === 'WEBCAM' || currentMode === 'LIVE' ? 'live-indicator-dot' : 'demo-indicator-dot'} />
+              <span className={isDeviceCamActive || currentMode === 'WEBCAM' || currentMode === 'LIVE' ? 'live-indicator-dot' : 'demo-indicator-dot'} />
               {currentMode}
             </span>
           </div>
 
-          {/* Player Controls */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button 
-              onClick={toggleStream} 
-              className={`btn ${isPlaying ? 'btn-danger' : 'btn-primary'}`}
-              style={{ padding: '7px 14px' }}
+          {/* Player Controls & Universal Device Camera Trigger */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            
+            {/* Primary Toggle: USE DEVICE CAMERA (Laptop/PC/Phone) */}
+            <button
+              onClick={toggleDeviceCamera}
+              className={`btn ${isDeviceCamActive ? 'btn-danger' : 'btn-primary'}`}
+              style={{
+                padding: '7px 14px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: isDeviceCamActive ? '#EF4444' : 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                color: '#fff',
+                boxShadow: isDeviceCamActive ? '0 0 12px rgba(239, 68, 68, 0.4)' : '0 0 12px rgba(2, 132, 199, 0.35)'
+              }}
+              title="Stream from this device's camera (Laptop, PC USB Webcam, Android, iOS)"
             >
-              {isPlaying ? <Square size={14} /> : <Play size={14} />}
-              <span>{isPlaying ? 'Stop' : 'Start Stream'}</span>
+              <Video size={16} />
+              <span>{isDeviceCamActive ? 'Stop Device Camera' : '🎥 Use My Device Camera'}</span>
             </button>
+
+            {/* Mobile Camera Flip Button (Front / Rear) */}
+            {isDeviceCamActive && (
+              <button
+                onClick={flipCamera}
+                className="btn btn-secondary"
+                style={{ padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '5px' }}
+                title="Flip between Front (Selfie) and Rear (Main) Camera"
+              >
+                <RefreshCw size={14} />
+                <span>Flip ({facingMode === 'user' ? 'Front' : 'Rear'})</span>
+              </button>
+            )}
+
+            {!isDeviceCamActive && (
+              <button 
+                onClick={toggleStream} 
+                className={`btn ${isPlaying ? 'btn-secondary' : 'btn-primary'}`}
+                style={{ padding: '7px 12px' }}
+              >
+                {isPlaying ? <Square size={14} /> : <Play size={14} />}
+                <span>{isPlaying ? 'Pause Feed' : 'Start Feed'}</span>
+              </button>
+            )}
 
             <button 
               onClick={handleTakeSnapshot} 
@@ -153,15 +427,6 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
             </button>
 
             <button 
-              onClick={() => setStreamKey(Date.now())} 
-              className="btn btn-secondary" 
-              style={{ padding: '7px 10px' }}
-              title="Refresh Stream Connection"
-            >
-              <RefreshCw size={14} />
-            </button>
-
-            <button 
               onClick={toggleFullscreen} 
               className="btn btn-secondary" 
               style={{ padding: '7px 10px' }}
@@ -171,6 +436,24 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
             </button>
           </div>
         </div>
+
+        {/* Device Camera Error Alert if Permission Denied */}
+        {deviceCamError && (
+          <div style={{
+            padding: '10px 14px',
+            borderRadius: '6px',
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid #ef4444',
+            color: '#ef4444',
+            fontSize: '0.82rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}>
+            <AlertTriangle size={18} />
+            <span>{deviceCamError}</span>
+          </div>
+        )}
 
         {/* Quick Camera Pills Selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
@@ -202,7 +485,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                   width: '6px',
                   height: '6px',
                   borderRadius: '50%',
-                  background: cam.status === 'ONLINE' ? 'var(--accent-emerald)' : 'var(--text-muted)'
+                  background: cam.status === 'ONLINE' || (isCur && isDeviceCamActive) ? 'var(--accent-emerald)' : 'var(--text-muted)'
                 }} />
                 {cam.name}
               </button>
@@ -223,11 +506,61 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: '1px solid var(--border-subtle)',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+            border: isDeviceCamActive ? '2px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
+            boxShadow: isDeviceCamActive ? '0 0 20px rgba(2, 132, 199, 0.25)' : '0 4px 12px rgba(0, 0, 0, 0.15)'
           }}
         >
-          {isPlaying && activeCamera ? (
+          {isDeviceCamActive ? (
+            /* Live Client Device Video + AI HUD Overlay Canvas */
+            <>
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  transform: facingMode === 'user' ? 'scaleX(-1)' : 'none', // Mirror selfie mode
+                  display: 'block'
+                }}
+              />
+              <canvas
+                ref={overlayCanvasRef}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none'
+                }}
+              />
+
+              {/* Top Banner on Device Camera */}
+              <div style={{
+                position: 'absolute',
+                top: '12px',
+                left: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(2, 132, 199, 0.85)',
+                color: '#fff',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                backdropFilter: 'blur(4px)',
+                letterSpacing: '0.04em'
+              }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 1.5s infinite' }} />
+                LIVE HARDWARE WEBCAM ({facingMode.toUpperCase()})
+              </div>
+            </>
+          ) : isPlaying && activeCamera ? (
+            /* Server-side MJPEG Stream */
             <img
               src={feedUrl}
               alt="Live Surveillance Stream"
@@ -244,68 +577,70 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
             <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
               <Radio size={44} style={{ opacity: 0.3, marginBottom: '8px' }} />
               <p style={{ fontWeight: 600, color: '#fff' }}>Stream Paused</p>
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Click 'Start Stream' to resume AI video feed</p>
+              <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Click 'Use My Device Camera' or 'Start Feed' to begin</p>
             </div>
           )}
 
           {/* Stream Overlay HUD Telemetry */}
-          {isPlaying && (
-            <div style={{
-              position: 'absolute',
-              bottom: '10px',
-              left: '10px',
-              right: '10px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              pointerEvents: 'none',
-              background: 'rgba(15, 23, 42, 0.8)',
-              backdropFilter: 'blur(8px)',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              fontSize: '0.75rem',
-              color: '#fff'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                <span className="mono" style={{ color: '#38bdf8' }}>
-                  FPS: {telemetry?.fps || 0}
-                </span>
-                <span className="mono" style={{ color: '#cbd5e1' }}>
-                  INFER: {telemetry?.inference_ms || 0} ms
-                </span>
-                <span className="mono" style={{ color: '#f8fafc' }}>
-                  TRACKS: {telemetry?.active_tracks?.length || 0}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
-                <span className="mono" style={{ color: '#34d399', fontSize: '0.7rem' }}>
-                  YOLOv8 + FACE DETECTION
-                </span>
-              </div>
+          <div style={{
+            position: 'absolute',
+            bottom: '10px',
+            left: '10px',
+            right: '10px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            pointerEvents: 'none',
+            background: 'rgba(15, 23, 42, 0.8)',
+            backdropFilter: 'blur(8px)',
+            padding: '6px 12px',
+            borderRadius: '6px',
+            fontSize: '0.75rem',
+            color: '#fff'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <span className="mono" style={{ color: '#38bdf8' }}>
+                FPS: {isDeviceCamActive ? clientFps : (telemetry?.fps || 0)}
+              </span>
+              <span className="mono" style={{ color: '#cbd5e1' }}>
+                INFER: {telemetry?.inference_ms || 0} ms
+              </span>
+              <span className="mono" style={{ color: '#f8fafc' }}>
+                TRACKS: {isDeviceCamActive ? latestDetections.length : (telemetry?.active_tracks?.length || 0)}
+              </span>
             </div>
-          )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
+              <span className="mono" style={{ color: '#34d399', fontSize: '0.7rem' }}>
+                {isDeviceCamActive ? 'CLIENT DEVICE HARDWARE' : 'AI ORCHESTRATOR ONLINE'}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Video Quality & Source URL Footnote */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-          <span>Source: <code className="mono" style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px' }}>{activeCamera?.source_url}</code></span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>Quality:</span>
-            <select
-              value={quality}
-              onChange={(e) => {
-                setQuality(Number(e.target.value));
-                setStreamKey(Date.now());
-              }}
-              className="form-input"
-              style={{ width: '75px', padding: '2px 6px', fontSize: '0.75rem' }}
-            >
-              <option value="60">60%</option>
-              <option value="80">80%</option>
-              <option value="95">95%</option>
-            </select>
-          </div>
+          <span>Source: <code className="mono" style={{ background: 'var(--bg-secondary)', padding: '2px 6px', borderRadius: '4px' }}>
+            {isDeviceCamActive ? `Browser Hardware (${facingMode})` : activeCamera?.source_url}
+          </code></span>
+          {!isDeviceCamActive && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>Quality:</span>
+              <select
+                value={quality}
+                onChange={(e) => {
+                  setQuality(Number(e.target.value));
+                  setStreamKey(Date.now());
+                }}
+                className="form-input"
+                style={{ width: '75px', padding: '2px 6px', fontSize: '0.75rem' }}
+              >
+                <option value="60">60%</option>
+                <option value="80">80%</option>
+                <option value="95">95%</option>
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -317,13 +652,57 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <h3 style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Activity size={16} color="var(--accent-cyan)" />
-              Detected Entities ({telemetry?.active_tracks?.length || 0})
+              Detected Entities ({isDeviceCamActive ? latestDetections.length : (telemetry?.active_tracks?.length || 0)})
             </h3>
-            <span className="badge badge-info" style={{ fontSize: '0.625rem' }}>LIVE</span>
+            <span className="badge badge-info" style={{ fontSize: '0.625rem' }}>
+              {isDeviceCamActive ? 'DEVICE' : 'LIVE'}
+            </span>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {telemetry?.active_tracks?.length > 0 ? (
+            {isDeviceCamActive ? (
+              latestDetections.length > 0 ? (
+                latestDetections.map((det, idx) => (
+                  <div 
+                    key={det.track_id || idx} 
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: '6px',
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {det.is_authorized ? (
+                        <UserCheck size={18} color="var(--accent-emerald)" />
+                      ) : det.class_name === 'person' ? (
+                        <UserX size={18} color="var(--accent-amber)" />
+                      ) : (
+                        <Radio size={18} color="var(--accent-cyan)" />
+                      )}
+                      <div>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>
+                          {det.class_name.toUpperCase()} #{det.track_id || idx + 1}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: det.identity && det.identity !== 'Unknown' ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
+                          {det.identity && det.identity !== 'Unknown' ? det.identity : 'Unidentified Object'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="badge badge-live" style={{ fontSize: '0.65rem' }}>
+                      {Math.round((det.confidence || 0) * 100)}%
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                  Awaiting detections in camera frame...
+                </div>
+              )
+            ) : telemetry?.active_tracks?.length > 0 ? (
               telemetry.active_tracks.map((track) => (
                 <div 
                   key={track.track_id} 
@@ -350,80 +729,58 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                         {track.class_name.toUpperCase()} #{track.track_id}
                       </div>
                       <div style={{ fontSize: '0.7rem', color: track.is_known ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
-                        {track.identity_name || 'Unidentified'}
+                        {track.identity || 'Unidentified Person'}
                       </div>
                     </div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                      <Clock size={11} /> {track.dwell_time}s
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div style={{ textAlign: 'center', padding: '30px 10px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                No active targets in view
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Active Zone Status Card */}
-        <div className="glass-panel" style={{ padding: '16px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <h3 style={{ fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <ShieldAlert size={16} color="var(--accent-rose)" />
-              Zone Intrusion Status
-            </h3>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {telemetry?.zone_events?.length > 0 ? (
-              telemetry.zone_events.map((ze, idx) => (
-                <div 
-                  key={idx}
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: '6px',
-                    background: 'rgba(239, 68, 68, 0.08)',
-                    border: '1px solid rgba(239, 68, 68, 0.25)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-rose)' }}>
-                      {ze.zone_name}
-                    </div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                      Target #{ze.track_id} ({ze.identity_name})
-                    </div>
-                  </div>
-                  <span className="badge badge-critical" style={{ fontSize: '0.625rem' }}>
-                    {ze.dwell_seconds}s
+                  <span className="badge badge-live" style={{ fontSize: '0.65rem' }}>
+                    {Math.round((track.confidence || 0) * 100)}%
                   </span>
                 </div>
               ))
             ) : (
-              <div style={{ textAlign: 'center', padding: '24px 10px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                All zones secure
+              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                No active entities detected
               </div>
             )}
           </div>
         </div>
+
+        {/* Security Summary & Device Tips Card */}
+        <div className="glass-panel" style={{ padding: '16px' }}>
+          <h3 style={{ fontSize: '0.875rem', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <ShieldAlert size={16} color="var(--accent-amber)" />
+            Universal Camera Support
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+              <CheckCircle2 size={15} color="var(--accent-emerald)" style={{ marginTop: '2px', flexShrink: 0 }} />
+              <span><strong>Laptop & PC:</strong> Click <em>Use My Device Camera</em> to use built-in webcam or external USB camera.</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+              <Smartphone size={15} color="var(--accent-cyan)" style={{ marginTop: '2px', flexShrink: 0 }} />
+              <span><strong>Android & iPhone:</strong> Open website on mobile browser and click <em>Use My Device Camera</em>, then use <em>Flip</em> for rear camera.</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+              <Radio size={15} color="var(--accent-amber)" style={{ marginTop: '2px', flexShrink: 0 }} />
+              <span><strong>CCTV / IP Webcams:</strong> Click <em>Add / Manage</em> to connect DroidCam or RTSP CCTV streams.</span>
+            </div>
+          </div>
+        </div>
+
       </div>
 
-      {/* Camera Management & Setup Modal */}
-      <CameraManagerModal
-        isOpen={isCameraModalOpen}
-        onClose={() => setIsCameraModalOpen(false)}
-        cameras={cameras}
-        activeCameraId={activeCamera?.id}
-        onSelectCamera={onSelectCamera}
-        onCamerasUpdated={onCamerasUpdated || (() => {})}
-      />
+      {/* Modal: Camera Source Setup */}
+      {isCameraModalOpen && (
+        <CameraManagerModal
+          isOpen={isCameraModalOpen}
+          onClose={() => setIsCameraModalOpen(false)}
+          cameras={cameras}
+          onCamerasUpdated={onCamerasUpdated}
+          onSelectCamera={onSelectCamera}
+          activeCameraId={activeCamera?.id}
+        />
+      )}
     </div>
   );
 }

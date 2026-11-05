@@ -132,6 +132,21 @@ class VideoCaptureManager:
 
         # Procedural demo scene state
         self._demo_tick = 0
+        self._is_client_injected = False
+
+    def inject_frame(self, frame: np.ndarray) -> None:
+        """Inject an externally captured frame (from browser client webcam, mobile phone, or client device)."""
+        if frame is not None and frame.size > 0:
+            with self.lock:
+                if frame.shape[1] != self.width or frame.shape[0] != self.height:
+                    self.latest_frame = cv2.resize(frame, (self.width, self.height))
+                else:
+                    self.latest_frame = frame.copy()
+                self.status = CameraStatus.ONLINE
+                self.last_error = None
+                self._consecutive_errors = 0
+                self.frame_count += 1
+                self._is_client_injected = True
 
     def start(self) -> bool:
         """Start background frame capture worker."""
@@ -340,6 +355,11 @@ class VideoCaptureManager:
                         logger.error(f"Auto-reconnect error on {self.source_url}: {err}")
                     finally:
                         self._is_reconnecting = False
+
+            if frame is None and not self._is_client_injected:
+                # If physical device unavailable (e.g. cloud host without USB), provide standby simulation
+                frame = self._generate_demo_frame()
+                self.status = CameraStatus.ONLINE
 
             if frame is not None:
                 with self.lock:

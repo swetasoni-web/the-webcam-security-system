@@ -102,6 +102,100 @@ class SurveillancePipeline:
         self.capture_mgr.stop()
         logger.info(f"SurveillancePipeline stopped for camera {self.camera_id}")
 
+    def process_external_frame(self, raw_frame: np.ndarray) -> Dict[str, Any]:
+        """
+        Process a single live frame streamed directly from any client device (laptop, PC, or Android phone).
+        Executes YOLOv8 detection, multi-object tracking, face recognition, restricted zone evaluation,
+        and triggers security alerts.
+        """
+        if raw_frame is None or raw_frame.size == 0:
+            return {"success": False, "error": "Invalid frame"}
+
+        # Normalize dimensions
+        if raw_frame.shape[1] != self.width or raw_frame.shape[0] != self.height:
+            raw_frame = cv2.resize(raw_frame, (self.width, self.height))
+
+        # Ingest into capture manager for background MJPEG broadcast
+        self.capture_mgr.inject_frame(raw_frame)
+
+        # 1. Object Detection (YOLO)
+        t_infer_start = time.time()
+        detections = self.yolo_detector.detect(raw_frame)
+        self.last_inference_ms = round((time.time() - t_infer_start) * 1000, 1)
+
+        # 2. Tracking
+        tracks = self.tracker.update(detections)
+
+        # 3. Face Recognition
+        with self.lock:
+            current_enrolled = list(self.enrolled_faces)
+            current_zones = list(self.zones)
+            current_rules = list(self.rules)
+
+        face_results = self.face_pipeline.process_frame(raw_frame, current_enrolled)
+        self.tracker.link_face_to_track(face_results)
+
+        # 4. Restricted Zone Intrusion Evaluation
+        zone_events = self.zone_engine.evaluate_tracks_in_zones(
+            tracks=tracks,
+            zones=current_zones,
+            frame_width=self.width,
+            frame_height=self.height
+        )
+
+        # 5. Security Rule Engine Evaluation
+        triggered_alerts = self.rule_engine.evaluate_rules(
+            camera_id=self.camera_id,
+            tracks=tracks,
+            zone_events=zone_events,
+            rules=current_rules
+        )
+
+        # Trigger alert callbacks (saves evidence snapshot & DB record)
+        if triggered_alerts and self.alert_callback:
+            for alert_spec in triggered_alerts:
+                try:
+                    self.alert_callback(alert_spec, raw_frame.copy())
+                except Exception as e:
+                    logger.error(f"Error executing alert callback: {e}")
+
+        # 6. Render HUD Overlays onto annotated_frame
+        annotated_frame = raw_frame.copy()
+        self._render_hud(annotated_frame, current_zones, tracks, zone_events, face_results)
+
+        # Store updated buffers
+        with self.lock:
+            self.latest_raw_frame = raw_frame
+            self.latest_annotated_frame = annotated_frame
+            self.active_tracks = [t.to_dict() for t in tracks]
+            self.active_zone_events = zone_events
+
+        return {
+            "success": True,
+            "inference_ms": self.last_inference_ms,
+            "detections": [
+                {
+                    "track_id": t.track_id,
+                    "class_name": t.class_name,
+                    "confidence": t.confidence,
+                    "bbox": [int(x) for x in t.bbox],
+                    "identity": t.identity,
+                    "identity_confidence": t.identity_confidence,
+                    "is_authorized": t.is_authorized
+                } for t in tracks
+            ],
+            "faces": [
+                {
+                    "bbox": [int(x) for x in f.get("bbox", [])],
+                    "identity": f.get("identity"),
+                    "confidence": f.get("confidence"),
+                    "is_authorized": f.get("is_authorized")
+                } for f in face_results
+            ],
+            "zone_events": zone_events,
+            "alerts": triggered_alerts
+        }
+
     def _processing_loop(self) -> None:
         """Main AI processing loop running in background thread."""
         fps_timer = time.time()

@@ -1,6 +1,10 @@
 import time
+import base64
+import cv2
+import numpy as np
 from typing import Generator, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -124,3 +128,51 @@ def get_stream_telemetry(
     summary["active_tracks"] = tracks
     summary["zone_events"] = zone_events
     return summary
+
+
+class IngestFramePayload(BaseModel):
+    image_base64: str
+
+
+@router.post("/{camera_id}/ingest_frame")
+async def ingest_frame(
+    camera_id: int,
+    file: Optional[UploadFile] = File(None),
+    body: Optional[IngestFramePayload] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Ingest and process a single live video frame directly from any client device
+    (Laptop built-in webcam, USB camera on PC, or Android / iPhone browser camera).
+    Runs real-time YOLOv8, Face Recognition, Tracking, Zone intrusion checks, and Security Rules.
+    """
+    camera = db.query(Camera).filter(Camera.id == camera_id).first()
+    if not camera:
+        raise HTTPException(status_code=404, detail="Camera not found")
+
+    pipe = pipeline_registry.get(camera_id)
+    if not pipe or not pipe.is_running:
+        pipe = pipeline_registry.start_pipeline(camera, db)
+
+    frame = None
+    if file:
+        raw_bytes = await file.read()
+        nparr = np.frombuffer(raw_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    elif body and body.image_base64:
+        data_str = body.image_base64
+        if "," in data_str:
+            data_str = data_str.split(",", 1)[1]
+        try:
+            raw_bytes = base64.b64decode(data_str)
+            nparr = np.frombuffer(raw_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {e}")
+
+    if frame is None or frame.size == 0:
+        raise HTTPException(status_code=400, detail="Could not decode frame from uploaded image")
+
+    results = pipe.process_external_frame(frame)
+    return results
