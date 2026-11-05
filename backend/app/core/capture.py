@@ -340,21 +340,21 @@ class VideoCaptureManager:
                     self.last_error = "Camera device not ready or disconnected."
                     time.sleep(0.2)
 
-                # Automatic Reconnection Recovery: if camera fails for 15+ consecutive frames (~1 second)
-                if self._consecutive_errors >= 15 and not self._is_reconnecting:
-                    self._is_reconnecting = True
-                    logger.warning(f"Connection lost on {self.source_url}. Initiating auto-reconnect...")
-                    self.status = CameraStatus.ERROR
-                    try:
-                        time.sleep(0.5)
-                        reopened = self._open_source()
-                        if reopened:
-                            logger.info(f"Auto-reconnected successfully to {self.source_url}")
-                            self._consecutive_errors = 0
-                    except Exception as err:
-                        logger.error(f"Auto-reconnect error on {self.source_url}: {err}")
-                    finally:
-                        self._is_reconnecting = False
+                # Periodic Reconnection Recovery: avoid busy loop blocking on headless/cloud hosts
+                if self._consecutive_errors >= 25 and not self._is_reconnecting:
+                    now = time.time()
+                    if not hasattr(self, '_last_reconnect_time') or (now - self._last_reconnect_time > 8.0):
+                        self._last_reconnect_time = now
+                        self._is_reconnecting = True
+                        try:
+                            reopened = self._open_source()
+                            if reopened:
+                                logger.info(f"Auto-reconnected successfully to {self.source_url}")
+                                self._consecutive_errors = 0
+                        except Exception as err:
+                            logger.debug(f"Auto-reconnect error on {self.source_url}: {err}")
+                        finally:
+                            self._is_reconnecting = False
 
             if frame is None and not self._is_client_injected:
                 # If physical device unavailable (e.g. cloud host without USB), provide standby simulation

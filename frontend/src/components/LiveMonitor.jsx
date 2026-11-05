@@ -15,7 +15,8 @@ import {
   Video,
   Smartphone,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Eye
 } from 'lucide-react';
 import { api } from '../api/client';
 import CameraManagerModal from './CameraManagerModal';
@@ -79,6 +80,18 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     };
   }, []);
 
+  // Ensure video element plays stream as soon as isDeviceCamActive changes
+  useEffect(() => {
+    if (isDeviceCamActive && localStreamRef.current && localVideoRef.current) {
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+      localVideoRef.current.play().catch(e => {
+        console.debug('Video play attempt on effect:', e);
+      });
+    }
+  }, [isDeviceCamActive]);
+
   // Universal Device Camera: Start / Stop / Flip
   const startDeviceCamera = async (mode = facingMode) => {
     try {
@@ -88,27 +101,40 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       // Stop existing tracks if switching modes
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
+        localStreamRef.current = null;
       }
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API (getUserMedia) is not supported in this browser or environment.');
       }
 
-      const constraints = {
-        video: {
-          facingMode: mode,
-          width: { ideal: 640 },
-          height: { ideal: 480 }
-        },
-        audio: false
-      };
+      let stream = null;
+      try {
+        // 1. Preferred constraints (ideal mode so it doesn't fail on PC webcams without facingMode tags)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: mode },
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
+        });
+      } catch (err1) {
+        console.warn('Ideal camera constraints failed, attempting fallback to generic video: true', err1);
+        // 2. Generic fallback (guaranteed to work on all USB webcams, laptops, and virtual cams)
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
 
+      // Assign to video element immediately
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
-        await localVideoRef.current.play();
+        try {
+          await localVideoRef.current.play();
+        } catch (e) {
+          console.debug('Direct play err, onLoadedMetadata will play:', e);
+        }
       }
 
       setIsDeviceCamActive(true);
@@ -118,9 +144,11 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       console.error('Error starting device camera:', err);
       let msg = err.message;
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        msg = 'Camera permission was denied. Please tap "Allow" or check browser settings to enable camera.';
+        msg = 'Camera permission was denied. Please click the camera icon in your browser address bar and choose "Always allow".';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         msg = 'No physical camera device was detected on this hardware.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        msg = 'Camera is already in use by another application. Please close Zoom/Teams/Camera app and retry.';
       }
       setDeviceCamError(msg);
       setIsDeviceCamActive(false);
@@ -177,7 +205,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     const sendFrame = async () => {
       if (!isRunning) return;
       const video = localVideoRef.current;
-      if (!video || video.readyState < 2 || inFlight) {
+      if (!video || video.readyState < 2 || video.paused || video.ended || inFlight) {
         if (isRunning) requestAnimationFrame(() => setTimeout(sendFrame, 100));
         return;
       }
@@ -213,7 +241,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       } finally {
         inFlight = false;
         if (isRunning) {
-          setTimeout(sendFrame, 140); // ~7 FPS balance
+          setTimeout(sendFrame, 150); // ~6.5 FPS balance
         }
       }
     };
@@ -303,7 +331,9 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       const ctx = snapCanvas.getContext('2d');
       ctx.drawImage(localVideoRef.current, 0, 0);
       const win = window.open();
-      win.document.write(`<img src="${snapCanvas.toDataURL('image/jpeg', 0.9)}" style="max-width:100%; height:auto;" />`);
+      if (win) {
+        win.document.write(`<img src="${snapCanvas.toDataURL('image/jpeg', 0.9)}" style="max-width:100%; height:auto;" />`);
+      }
       return;
     }
     if (!activeCamera) return;
@@ -510,57 +540,65 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
             boxShadow: isDeviceCamActive ? '0 0 20px rgba(2, 132, 199, 0.25)' : '0 4px 12px rgba(0, 0, 0, 0.15)'
           }}
         >
-          {isDeviceCamActive ? (
-            /* Live Client Device Video + AI HUD Overlay Canvas */
-            <>
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                  transform: facingMode === 'user' ? 'scaleX(-1)' : 'none', // Mirror selfie mode
-                  display: 'block'
-                }}
-              />
-              <canvas
-                ref={overlayCanvasRef}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none'
-                }}
-              />
+          {/* Always-mounted Client Device Camera Video element (Eliminates React unmounted ref bug) */}
+          <video
+            ref={localVideoRef}
+            autoPlay
+            playsInline
+            muted
+            onLoadedMetadata={(e) => {
+              e.target.play().catch(err => console.debug('Video onLoadedMetadata play err:', err));
+            }}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain',
+              display: isDeviceCamActive ? 'block' : 'none',
+              transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
+              backgroundColor: '#000'
+            }}
+          />
 
-              {/* Top Banner on Device Camera */}
-              <div style={{
-                position: 'absolute',
-                top: '12px',
-                left: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: 'rgba(2, 132, 199, 0.85)',
-                color: '#fff',
-                padding: '4px 10px',
-                borderRadius: '6px',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                backdropFilter: 'blur(4px)',
-                letterSpacing: '0.04em'
-              }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', animation: 'pulse 1.5s infinite' }} />
-                LIVE HARDWARE WEBCAM ({facingMode.toUpperCase()})
-              </div>
-            </>
-          ) : isPlaying && activeCamera ? (
-            /* Server-side MJPEG Stream */
+          {/* AI HUD Overlay Canvas */}
+          <canvas
+            ref={overlayCanvasRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+              display: isDeviceCamActive ? 'block' : 'none'
+            }}
+          />
+
+          {/* Top Banner on Device Camera */}
+          {isDeviceCamActive && (
+            <div style={{
+              position: 'absolute',
+              top: '12px',
+              left: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'rgba(2, 132, 199, 0.85)',
+              color: '#fff',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '0.72rem',
+              fontWeight: 600,
+              backdropFilter: 'blur(4px)',
+              letterSpacing: '0.04em',
+              zIndex: 10
+            }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981' }} />
+              LIVE HARDWARE WEBCAM ({facingMode.toUpperCase()})
+            </div>
+          )}
+
+          {/* Server-side MJPEG Stream when Device Camera is NOT active */}
+          {!isDeviceCamActive && isPlaying && activeCamera ? (
             <img
               src={feedUrl}
               alt="Live Surveillance Stream"
@@ -573,13 +611,13 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
               onError={() => setStreamError(true)}
               onLoad={() => setStreamError(false)}
             />
-          ) : (
+          ) : !isDeviceCamActive ? (
             <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
               <Radio size={44} style={{ opacity: 0.3, marginBottom: '8px' }} />
               <p style={{ fontWeight: 600, color: '#fff' }}>Stream Paused</p>
               <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Click 'Use My Device Camera' or 'Start Feed' to begin</p>
             </div>
-          )}
+          ) : null}
 
           {/* Stream Overlay HUD Telemetry */}
           <div style={{
@@ -596,7 +634,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
             padding: '6px 12px',
             borderRadius: '6px',
             fontSize: '0.75rem',
-            color: '#fff'
+            color: '#fff',
+            zIndex: 10
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
               <span className="mono" style={{ color: '#38bdf8' }}>
@@ -755,7 +794,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
               <CheckCircle2 size={15} color="var(--accent-emerald)" style={{ marginTop: '2px', flexShrink: 0 }} />
-              <span><strong>Laptop & PC:</strong> Click <em>Use My Device Camera</em> to use built-in webcam or external USB camera.</span>
+              <span><strong>Laptop & PC:</strong> Click <em>Use My Device Camera</em> to activate built-in webcam or external USB camera.</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
               <Smartphone size={15} color="var(--accent-cyan)" style={{ marginTop: '2px', flexShrink: 0 }} />
