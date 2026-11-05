@@ -190,11 +190,14 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS Middleware — restrict to configured origins in production
+# CORS Middleware — robust handling for specific origins or wildcard
+cors_origins = settings.CORS_ORIGINS if settings.is_production() else ["*"]
+allow_all_origins = "*" in cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS if settings.is_production() else ["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -17,13 +17,33 @@ class Settings(BaseSettings):
     PORT: int = 8000
     HOST: str = "0.0.0.0"
 
-    # CORS — set CORS_ORIGINS in .env for production (comma-separated)
-    CORS_ORIGINS: List[str] = [
+    # CORS — set CORS_ORIGINS in .env for production (comma-separated, JSON list, or '*')
+    CORS_ORIGINS: Union[List[str], str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v or v == "*":
+                return ["*"]
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(v)
+                    if isinstance(parsed, list):
+                        return [str(x).strip() for x in parsed if x]
+                except Exception:
+                    pass
+            return [x.strip() for x in v.split(",") if x.strip()]
+        elif isinstance(v, list):
+            return [str(x).strip() for x in v if x]
+        return ["*"]
 
     # JWT Authentication — MUST override SECRET_KEY in production via env
     SECRET_KEY: str = "CHANGE_ME_use_a_32_byte_random_hex_in_production"
