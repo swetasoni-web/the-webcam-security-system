@@ -32,11 +32,27 @@ class FaceRecognitionPipeline:
     def _initialize_pipeline(self) -> None:
         """Initialize face detector and 512-d feature extractor model on CPU."""
         try:
-            # 1. OpenCV Frontal Face Haar Cascade
-            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            self.face_cascade = cv2.CascadeClassifier(cascade_path)
-            if self.face_cascade.empty():
-                raise RuntimeError(f"Failed to load Haar cascade from {cascade_path}")
+            # 1. OpenCV Frontal Face Haar Cascade (Safe Resolution across Linux / Windows)
+            self.face_cascade = None
+            cascade_path = None
+            if hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
+                cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+
+            classifier_cls = getattr(cv2, "CascadeClassifier", None)
+            if classifier_cls is None:
+                try:
+                    import cv2.objdetect
+                    classifier_cls = getattr(cv2.objdetect, "CascadeClassifier", None)
+                except Exception:
+                    pass
+
+            if classifier_cls and cascade_path and os.path.exists(cascade_path):
+                try:
+                    cascade = classifier_cls(cascade_path)
+                    if not cascade.empty():
+                        self.face_cascade = cascade
+                except Exception as ce:
+                    logger.warning(f"Could not initialize CascadeClassifier: {ce}")
 
             # 2. ResNet-18 512-dimensional Feature Extractor (Offline & Fast)
             try:
