@@ -1,0 +1,17 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "the_webcam",
+  "name_for_human": "The WebCam Surveillance",
+  "description_for_model": "AI surveillance system for object detection, face recognition, and security alerts.",
+  "description_for_human": "Smart Facial & Object Recognition Security System.",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://the-webcam-security-system.onrender.com/openapi.json"
+  },
+  "logo_url": "https://thewebcm.netlify.app/favicon.svg",
+  "contact_email": "support@thewebcm.net",
+  "legal_info_url": "https://thewebcm.netlify.app"
+}

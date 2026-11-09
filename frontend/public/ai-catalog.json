@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "The WebCam",
+  "version": "1.0.0",
+  "description": "AI-Powered Intelligent Security Surveillance System Using Face Recognition and Object Detection",
+  "url": "https://thewebcm.netlify.app",
+  "capabilities": [
+    "video_surveillance",
+    "object_detection",
+    "face_recognition",
+    "zone_monitoring",
+    "security_alerts"
+  ],
+  "api": {
+    "health": "/api/system/health",
+    "cameras": "/api/cameras",
+    "alerts": "/api/alerts",
+    "ingest_frame": "/api/stream/{camera_id}/ingest_frame"
+  }
+}

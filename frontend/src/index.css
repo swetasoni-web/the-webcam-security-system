@@ -298,6 +298,21 @@ h1, h2, h3, h4 {
   padding: 0 16px 20px;
 }
 
+.camera-viewport {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  min-height: 280px;
+  max-height: 520px;
+  background-color: #05070a;
+  border-radius: 10px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  contain: layout;
+}
+
 @media (max-width: 960px) {
   .monitor-grid {
     grid-template-columns: 1fr !important;
@@ -331,6 +346,8 @@ h1, h2, h3, h4 {
   }
 
   .camera-viewport {
-    height: 380px !important;
+    aspect-ratio: 4 / 3;
+    min-height: 260px;
+    height: auto !important;
   }
 }

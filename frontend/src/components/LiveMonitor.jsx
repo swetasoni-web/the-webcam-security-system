@@ -603,41 +603,47 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         )}
 
         {/* Quick Camera Pills Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', paddingBottom: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflowX: 'auto', paddingBottom: '2px', minHeight: '32px' }}>
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
             Cameras:
           </span>
-          {cameras.map((cam) => {
-            const isCur = cam.id === activeCamera?.id;
-            return (
-              <button
-                key={cam.id}
-                onClick={() => onSelectCamera(cam.id)}
-                style={{
-                  padding: '3px 10px',
-                  borderRadius: '16px',
-                  border: isCur ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
-                  background: isCur ? 'rgba(2, 132, 199, 0.12)' : 'var(--bg-secondary)',
-                  color: isCur ? 'var(--accent-cyan)' : 'var(--text-secondary)',
-                  fontSize: '0.75rem',
-                  fontWeight: isCur ? 700 : 500,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <span style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: cam.status === 'ONLINE' || (isCur && isDeviceCamActive) ? 'var(--accent-emerald)' : 'var(--text-muted)'
-                }} />
-                {cam.name}
-              </button>
-            );
-          })}
+          {cameras.length > 0 ? (
+            cameras.map((cam) => {
+              const isCur = cam.id === activeCamera?.id;
+              return (
+                <button
+                  key={cam.id}
+                  onClick={() => onSelectCamera(cam.id)}
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: '16px',
+                    border: isCur ? '1px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
+                    background: isCur ? 'rgba(2, 132, 199, 0.12)' : 'var(--bg-secondary)',
+                    color: isCur ? 'var(--accent-cyan)' : 'var(--text-secondary)',
+                    fontSize: '0.75rem',
+                    fontWeight: isCur ? 700 : 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <span style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: cam.status === 'ONLINE' || (isCur && isDeviceCamActive) ? 'var(--accent-emerald)' : 'var(--text-muted)'
+                  }} />
+                  {cam.name}
+                </button>
+              );
+            })
+          ) : (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', padding: '2px 8px' }}>
+              Primary Live Webcam
+            </span>
+          )}
         </div>
 
         {/* Video Canvas Container */}
@@ -645,16 +651,6 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           ref={videoContainerRef}
           className="camera-viewport"
           style={{
-            position: 'relative',
-            width: '100%',
-            height: 'min(520px, 65vh)',
-            minHeight: '300px',
-            backgroundColor: '#05070a',
-            borderRadius: '10px',
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             border: isDeviceCamActive ? '2px solid var(--accent-cyan)' : '1px solid var(--border-subtle)',
             boxShadow: isDeviceCamActive ? '0 0 20px rgba(2, 132, 199, 0.25)' : '0 4px 12px rgba(0, 0, 0, 0.15)'
           }}

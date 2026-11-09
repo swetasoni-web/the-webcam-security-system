@@ -1,0 +1,17 @@
+# The WebCam - Intelligent Security Surveillance Console
+
+> The WebCam is an AI-powered intelligent security surveillance web application providing real-time object detection (YOLOv8), face recognition, multi-camera monitoring, restricted zone boundary monitoring, and automated security rule alerts.
+
+## Primary Capabilities
+- **Live Monitor**: Live client hardware camera (laptop webcam, USB PC camera, mobile rear/front camera) and IP camera feed ingestion.
+- **AI Object Detection**: Real-time detection of people, electronics, vehicles, and backpacks with bounding box tracking.
+- **Face Recognition**: Vectorized facial identification against enrolled authorized/visitor identity databases.
+- **Restricted Zones**: Custom polygon boundary drawing and automated intrusion detection.
+- **Rule Engine**: Dwell-time thresholds, loitering alerts, and severity policy evaluation.
+- **Evidence Gallery**: Audit trail snapshots of triggered security incidents.
+
+## APIs & Integration
+- `GET /api/system/health`: System health and AI detector load status.
+- `GET /api/cameras`: Camera registry and device source management.
+- `POST /api/stream/{camera_id}/ingest_frame`: Real-time external video frame processing.
+- `GET /api/alerts`: Real-time and historical security alerts.
