@@ -93,14 +93,17 @@ export default function LoginModal({ onLoginSuccess }) {
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           <div>
-            <label className="form-label">Username</label>
+            <label htmlFor="login-username" className="form-label">Username</label>
             <div style={{ position: 'relative' }}>
               <input
+                id="login-username"
+                name="username"
                 type="text"
                 className="form-input"
                 style={{ paddingLeft: '34px' }}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
                 required
               />
               <User size={16} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-muted)' }} />
@@ -108,14 +111,17 @@ export default function LoginModal({ onLoginSuccess }) {
           </div>
 
           <div>
-            <label className="form-label">Password</label>
+            <label htmlFor="login-password" className="form-label">Password</label>
             <div style={{ position: 'relative' }}>
               <input
+                id="login-password"
+                name="password"
                 type="password"
                 className="form-input"
                 style={{ paddingLeft: '34px' }}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
                 required
               />
               <Key size={16} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-muted)' }} />

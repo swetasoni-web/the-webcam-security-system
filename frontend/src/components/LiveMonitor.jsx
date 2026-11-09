@@ -37,6 +37,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   const [clientFps, setClientFps] = useState(0);
   const [latestDetections, setLatestDetections] = useState([]);
   const [deviceCamAlert, setDeviceCamAlert] = useState(null);
+  const [alertToast, setAlertToast] = useState(null); // { message, severity, id }
+  const [lastInferenceMs, setLastInferenceMs] = useState(0);
   const [aiServerStatus, setAiServerStatus] = useState('STANDBY'); // 'STANDBY' | 'CONNECTING' | 'ACTIVE' | 'ERROR'
   const [aiServerMessage, setAiServerMessage] = useState('');
 
@@ -230,6 +232,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         if (isRunning && res && res.success) {
           setAiServerStatus('ACTIVE');
           setAiServerMessage(`Infer: ${res.inference_ms || 0}ms`);
+          setLastInferenceMs(res.inference_ms || 0);
 
           const combined = [...(res.detections || [])];
           if (res.faces && res.faces.length > 0) {
@@ -253,6 +256,10 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
           if (res.alerts && res.alerts.length > 0) {
             setDeviceCamAlert(res.alerts[0]);
+            // Show toast notification for security alert
+            const toastMsg = res.alerts[0].description || res.alerts[0].rule_name || 'Security Alert Triggered!';
+            setAlertToast({ message: toastMsg, severity: res.alerts[0].severity || 'HIGH', id: Date.now() });
+            setTimeout(() => setAlertToast(null), 4000);
             if (onNewAlert) {
               res.alerts.forEach(a => onNewAlert(a));
             }
@@ -729,6 +736,55 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                   AI ACTIVE
                 </div>
               )}
+              {/* Inference timing badge when active */}
+              {aiServerStatus === 'ACTIVE' && lastInferenceMs > 0 && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  background: 'rgba(15, 23, 42, 0.85)',
+                  color: '#94a3b8',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.68rem',
+                  fontWeight: 600,
+                  backdropFilter: 'blur(4px)',
+                  fontFamily: 'monospace'
+                }}>
+                  ⚡ {lastInferenceMs}ms
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Security Alert Toast Notification */}
+          {alertToast && (
+            <div style={{
+              position: 'absolute',
+              top: '12px',
+              right: '12px',
+              zIndex: 50,
+              maxWidth: '260px',
+              background: 'rgba(239, 68, 68, 0.95)',
+              color: '#fff',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '8px',
+              boxShadow: '0 0 20px rgba(239, 68, 68, 0.5)',
+              backdropFilter: 'blur(8px)',
+              animation: 'fadeIn 0.3s ease'
+            }}>
+              <span style={{ fontSize: '1.1rem', flexShrink: 0 }}>🚨</span>
+              <div>
+                <div style={{ fontSize: '0.68rem', opacity: 0.85, marginBottom: '2px' }}>
+                  SECURITY ALERT [{alertToast.severity}]
+                </div>
+                <div>{alertToast.message}</div>
+              </div>
             </div>
           )}
 
@@ -777,7 +833,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                 FPS: {isDeviceCamActive ? clientFps : (telemetry?.fps || 0)}
               </span>
               <span className="mono" style={{ color: '#cbd5e1' }}>
-                INFER: {telemetry?.inference_ms || 0} ms
+                INFER: {isDeviceCamActive ? lastInferenceMs : (telemetry?.inference_ms || 0)} ms
               </span>
               <span className="mono" style={{ color: '#f8fafc' }}>
                 TRACKS: {isDeviceCamActive ? latestDetections.length : (telemetry?.active_tracks?.length || 0)}

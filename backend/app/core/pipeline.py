@@ -42,7 +42,7 @@ class SurveillancePipeline:
 
         # Pipeline sub-components
         self.capture_mgr = VideoCaptureManager(source_type, source_url, width, height, target_fps)
-        self.yolo_detector = YOLODetector(confidence_threshold=0.40)
+        self.yolo_detector = YOLODetector(confidence_threshold=0.25)
         self.face_pipeline = FaceRecognitionPipeline(match_threshold=0.60)
         self.tracker = CentroidIoUTracker(max_age_frames=30, iou_threshold=0.25)
         self.zone_engine = ZoneEngine()

@@ -1,0 +1,19 @@
+{
+  "name": "The WebCam - Intelligent Security Surveillance",
+  "short_name": "The WebCam",
+  "description": "AI-Powered Smart Facial & Object Recognition Security System",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0284c7",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["security", "productivity", "utilities"]
+}
