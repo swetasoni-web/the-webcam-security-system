@@ -54,9 +54,9 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
   const activeCamera = cameras.find(c => c.id === Number(selectedCameraId)) || cameras[0] || { id: 1, name: 'Hardware Webcam', source_type: 'WEBCAM' };
 
-  // Poll real-time telemetry every 1000ms when not using device camera
+  // Poll real-time telemetry every 3000ms ONLY when not using device camera (prevents 502 connection flooding)
   useEffect(() => {
-    if (!activeCamera) return;
+    if (!activeCamera || isDeviceCamActive) return;
 
     let isMounted = true;
     const fetchTelemetry = async () => {
@@ -72,12 +72,12 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     };
 
     fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 1000);
+    const interval = setInterval(fetchTelemetry, 3000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [activeCamera?.id]);
+  }, [activeCamera?.id, isDeviceCamActive]);
 
   // Clean up device camera stream on unmount
   useEffect(() => {
@@ -218,11 +218,12 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       if (!isRunning) return;
       const video = localVideoRef.current;
       if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2 || video.paused || video.ended || inFlight) {
-        if (isRunning) requestAnimationFrame(() => setTimeout(sendFrame, 80));
+        if (isRunning) requestAnimationFrame(() => setTimeout(sendFrame, 100));
         return;
       }
 
       inFlight = true;
+      let nextDelay = 120; // Default: ~8 FPS (ideal real-time cadence on cloud free-tier)
       try {
         offCtx.drawImage(video, 0, 0, 320, 240);
         const dataUrl = offscreen.toDataURL('image/jpeg', 0.55);
@@ -233,6 +234,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           setAiServerStatus('ACTIVE');
           setAiServerMessage(`Infer: ${res.inference_ms || 0}ms`);
           setLastInferenceMs(res.inference_ms || 0);
+          nextDelay = 120;
 
           const combined = [...(res.detections || [])];
           if (res.faces && res.faces.length > 0) {
@@ -278,10 +280,11 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         console.debug('Frame ingestion error:', err);
         setAiServerStatus('CONNECTING');
         setAiServerMessage('Connecting to AI cloud service (Render waking up, please wait ~20s)...');
+        nextDelay = 2500; // 2.5s backoff on 502/network failure allows cloud container to boot and recover
       } finally {
         inFlight = false;
         if (isRunning) {
-          setTimeout(sendFrame, 40); // 40ms delay = smooth 10-14 FPS stream
+          setTimeout(sendFrame, nextDelay);
         }
       }
     };

@@ -217,5 +217,28 @@ async def ingest_frame(
     if frame is None or frame.size == 0:
         raise HTTPException(status_code=400, detail="Could not decode frame from uploaded image")
 
-    results = pipe.process_external_frame(frame)
+    # Concurrency guard: Drop frame if previous frame is still being processed
+    # Prevents CPU thread exhaustion and 512MB RAM Out-Of-Memory crashes on free-tier cloud servers
+    if getattr(pipe, "_is_processing_external", False):
+        with pipe.lock:
+            cached_tracks = list(pipe.active_tracks)
+            cached_zones = list(pipe.active_zone_events)
+        return {
+            "success": True,
+            "inference_ms": pipe.last_inference_ms,
+            "frame_width": pipe.width,
+            "frame_height": pipe.height,
+            "detections": cached_tracks,
+            "faces": [],
+            "zone_events": cached_zones,
+            "alerts": [],
+            "skipped": True
+        }
+
+    try:
+        pipe._is_processing_external = True
+        results = pipe.process_external_frame(frame)
+    finally:
+        pipe._is_processing_external = False
+
     return results

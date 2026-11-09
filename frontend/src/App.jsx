@@ -73,7 +73,7 @@ export default function App() {
   useEffect(() => {
     if (user) {
       refreshAppData();
-      const interval = setInterval(refreshAppData, 5000);
+      const interval = setInterval(refreshAppData, 10000);
       return () => clearInterval(interval);
     }
   }, [user]);
