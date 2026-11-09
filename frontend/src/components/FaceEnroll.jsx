@@ -250,8 +250,10 @@ export default function FaceEnroll({ user }) {
 
             <form onSubmit={handleEnroll} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label className="form-label">Full Name</label>
+                <label htmlFor="enroll-full-name" className="form-label">Full Name</label>
                 <input
+                  id="enroll-full-name"
+                  name="fullName"
                   type="text"
                   placeholder="e.g. Dr. Jane Smith"
                   className="form-input"
@@ -263,8 +265,10 @@ export default function FaceEnroll({ user }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="form-label">Identity / Badge Code</label>
+                  <label htmlFor="enroll-identity-code" className="form-label">Identity / Badge Code</label>
                   <input
+                    id="enroll-identity-code"
+                    name="identityCode"
                     type="text"
                     placeholder="e.g. SEC-007"
                     className="form-input"
@@ -274,8 +278,10 @@ export default function FaceEnroll({ user }) {
                   />
                 </div>
                 <div>
-                  <label className="form-label">Department / Role</label>
+                  <label htmlFor="enroll-department" className="form-label">Department / Role</label>
                   <input
+                    id="enroll-department"
+                    name="department"
                     type="text"
                     placeholder="e.g. Facility Admin"
                     className="form-input"
@@ -286,8 +292,10 @@ export default function FaceEnroll({ user }) {
               </div>
 
               <div>
-                <label className="form-label">Portrait Photo (Upload or Take Selfie with Camera)</label>
+                <label htmlFor="enroll-photo" className="form-label">Portrait Photo (Upload or Take Selfie with Camera)</label>
                 <input
+                  id="enroll-photo"
+                  name="photo"
                   type="file"
                   accept="image/*"
                   capture="user"
@@ -307,8 +315,10 @@ export default function FaceEnroll({ user }) {
               </div>
 
               <div>
-                <label className="form-label">Notes (Optional)</label>
+                <label htmlFor="enroll-notes" className="form-label">Notes (Optional)</label>
                 <input
+                  id="enroll-notes"
+                  name="notes"
                   type="text"
                   placeholder="e.g. Authorized 24/7 server room access"
                   className="form-input"

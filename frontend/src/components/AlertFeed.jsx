@@ -86,6 +86,8 @@ export default function AlertFeed({ user, onAlertsUpdated }) {
         {/* Filter Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <select 
+            id="alert-severity-filter"
+            aria-label="Filter alerts by severity"
             value={severityFilter} 
             onChange={(e) => setSeverityFilter(e.target.value)}
             className="form-input" 
@@ -99,6 +101,8 @@ export default function AlertFeed({ user, onAlertsUpdated }) {
           </select>
 
           <select 
+            id="alert-ack-filter"
+            aria-label="Filter alerts by status"
             value={ackFilter} 
             onChange={(e) => setAckFilter(e.target.value)}
             className="form-input" 

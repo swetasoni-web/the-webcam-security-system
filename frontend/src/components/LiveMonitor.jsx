@@ -463,6 +463,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <select
+                id="active-camera-select"
+                aria-label="Select Active Camera"
                 className="form-input"
                 style={{ width: '230px', fontWeight: 600, padding: '7px 10px' }}
                 value={activeCamera?.id || ''}
@@ -480,6 +482,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                 className="btn btn-primary"
                 style={{ padding: '7px 12px', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
                 title="Add new camera or scan hardware webcams"
+                aria-label="Add or Manage Cameras"
               >
                 <Plus size={15} />
                 <span>Add / Manage</span>
@@ -515,6 +518,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                 boxShadow: isDeviceCamActive ? '0 0 12px rgba(239, 68, 68, 0.4)' : '0 0 12px rgba(2, 132, 199, 0.35)'
               }}
               title="Stream from this device's camera (Laptop, PC USB Webcam, Android, iOS)"
+              aria-label={isDeviceCamActive ? 'Stop Device Camera' : 'Use My Device Camera'}
             >
               <Video size={16} />
               <span>{isDeviceCamActive ? 'Stop Device Camera' : '🎥 Use My Device Camera'}</span>
@@ -527,6 +531,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                 className="btn btn-secondary"
                 style={{ padding: '7px 12px', display: 'flex', alignItems: 'center', gap: '5px' }}
                 title="Flip between Front (Selfie) and Rear (Main) Camera"
+                aria-label="Flip Camera between Front and Rear"
               >
                 <RefreshCw size={14} />
                 <span>Flip ({facingMode === 'user' ? 'Front' : 'Rear'})</span>
@@ -538,6 +543,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                 onClick={toggleStream} 
                 className={`btn ${isPlaying ? 'btn-secondary' : 'btn-primary'}`}
                 style={{ padding: '7px 12px' }}
+                aria-label={isPlaying ? 'Pause Feed' : 'Start Feed'}
               >
                 {isPlaying ? <Square size={14} /> : <Play size={14} />}
                 <span>{isPlaying ? 'Pause Feed' : 'Start Feed'}</span>
@@ -549,6 +555,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
               className="btn btn-secondary" 
               style={{ padding: '7px 12px' }}
               title="Capture Instant Frame Snapshot"
+              aria-label="Capture Instant Frame Snapshot"
             >
               <Camera size={14} />
               <span>Snapshot</span>
@@ -559,6 +566,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
               className="btn btn-secondary" 
               style={{ padding: '7px 10px' }}
               title="Toggle Fullscreen"
+              aria-label="Toggle Fullscreen"
             >
               <Maximize2 size={14} />
             </button>
@@ -855,8 +863,10 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           </code></span>
           {!isDeviceCamActive && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span>Quality:</span>
+              <label htmlFor="stream-quality-select" style={{ fontSize: '0.75rem' }}>Quality:</label>
               <select
+                id="stream-quality-select"
+                aria-label="Stream Video Quality"
                 value={quality}
                 onChange={(e) => {
                   setQuality(Number(e.target.value));

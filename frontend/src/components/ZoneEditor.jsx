@@ -246,8 +246,10 @@ export default function ZoneEditor({ cameras, selectedCameraId, user }) {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
-                <label className="form-label">Zone Name</label>
+                <label htmlFor="zone-name-input" className="form-label">Zone Name</label>
                 <input
+                  id="zone-name-input"
+                  name="zoneName"
                   type="text"
                   placeholder="e.g. Restricted Vault, Server Room"
                   className="form-input"
@@ -257,8 +259,11 @@ export default function ZoneEditor({ cameras, selectedCameraId, user }) {
               </div>
 
               <div>
-                <label className="form-label">Severity Level</label>
+                <label htmlFor="zone-severity-select" className="form-label">Severity Level</label>
                 <select
+                  id="zone-severity-select"
+                  name="zoneSeverity"
+                  aria-label="Zone Severity Level"
                   className="form-input"
                   value={zoneSeverity}
                   onChange={(e) => setZoneSeverity(e.target.value)}

@@ -243,8 +243,10 @@ export default function RuleManager({ cameras, user }) {
 
             <form onSubmit={handleCreateRule} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label className="form-label">Rule Name</label>
+                <label htmlFor="rule-name-input" className="form-label">Rule Name</label>
                 <input
+                  id="rule-name-input"
+                  name="ruleName"
                   type="text"
                   placeholder="e.g. Unknown Person Loitering Alert"
                   className="form-input"
@@ -255,8 +257,10 @@ export default function RuleManager({ cameras, user }) {
               </div>
 
               <div>
-                <label className="form-label">Description</label>
+                <label htmlFor="rule-description-input" className="form-label">Description</label>
                 <input
+                  id="rule-description-input"
+                  name="ruleDescription"
                   type="text"
                   placeholder="e.g. Alerts security when an un-enrolled face is seen for > 3s"
                   className="form-input"
@@ -267,8 +271,11 @@ export default function RuleManager({ cameras, user }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="form-label">Bound Camera</label>
+                  <label htmlFor="rule-camera-select" className="form-label">Bound Camera</label>
                   <select
+                    id="rule-camera-select"
+                    name="ruleCamera"
+                    aria-label="Bound Camera"
                     className="form-input"
                     value={cameraId}
                     onChange={(e) => setCameraId(e.target.value)}
@@ -281,8 +288,11 @@ export default function RuleManager({ cameras, user }) {
                 </div>
 
                 <div>
-                  <label className="form-label">Bound Zone</label>
+                  <label htmlFor="rule-zone-select" className="form-label">Bound Zone</label>
                   <select
+                    id="rule-zone-select"
+                    name="ruleZone"
+                    aria-label="Bound Zone"
                     className="form-input"
                     value={zoneId}
                     onChange={(e) => setZoneId(e.target.value)}
@@ -297,8 +307,11 @@ export default function RuleManager({ cameras, user }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="form-label">Target Identity</label>
+                  <label htmlFor="rule-target-identity" className="form-label">Target Identity</label>
                   <select
+                    id="rule-target-identity"
+                    name="targetIdentity"
+                    aria-label="Target Identity"
                     className="form-input"
                     value={targetIdentity}
                     onChange={(e) => setTargetIdentity(e.target.value)}
@@ -310,8 +323,11 @@ export default function RuleManager({ cameras, user }) {
                 </div>
 
                 <div>
-                  <label className="form-label">Severity Level</label>
+                  <label htmlFor="rule-severity-select" className="form-label">Severity Level</label>
                   <select
+                    id="rule-severity-select"
+                    name="ruleSeverity"
+                    aria-label="Severity Level"
                     className="form-input"
                     value={severity}
                     onChange={(e) => setSeverity(e.target.value)}
@@ -326,8 +342,10 @@ export default function RuleManager({ cameras, user }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="form-label">Min Dwell Time (Seconds)</label>
+                  <label htmlFor="rule-dwell-seconds" className="form-label">Min Dwell Time (Seconds)</label>
                   <input
+                    id="rule-dwell-seconds"
+                    name="dwellSeconds"
                     type="number"
                     step="0.5"
                     min="0"
@@ -338,8 +356,10 @@ export default function RuleManager({ cameras, user }) {
                 </div>
 
                 <div>
-                  <label className="form-label">Alert Cooldown (Seconds)</label>
+                  <label htmlFor="rule-cooldown-seconds" className="form-label">Alert Cooldown (Seconds)</label>
                   <input
+                    id="rule-cooldown-seconds"
+                    name="cooldownSeconds"
                     type="number"
                     min="1"
                     className="form-input"
@@ -351,8 +371,10 @@ export default function RuleManager({ cameras, user }) {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="form-label">Schedule Start</label>
+                  <label htmlFor="rule-schedule-start" className="form-label">Schedule Start</label>
                   <input
+                    id="rule-schedule-start"
+                    name="scheduleStart"
                     type="time"
                     className="form-input"
                     value={scheduleStart}
@@ -361,8 +383,10 @@ export default function RuleManager({ cameras, user }) {
                 </div>
 
                 <div>
-                  <label className="form-label">Schedule End</label>
+                  <label htmlFor="rule-schedule-end" className="form-label">Schedule End</label>
                   <input
+                    id="rule-schedule-end"
+                    name="scheduleEnd"
                     type="time"
                     className="form-input"
                     value={scheduleEnd}

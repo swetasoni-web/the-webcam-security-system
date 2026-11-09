@@ -130,6 +130,7 @@ export default function Navbar({
           className="btn btn-secondary"
           style={{ padding: '6px 10px', fontSize: '0.75rem' }}
           title={theme === 'light' ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
+          aria-label={theme === 'light' ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
         >
           {theme === 'light' ? <Moon size={14} /> : <Sun size={14} color="#facc15" />}
           <span>{theme === 'light' ? 'Dark' : 'Light'}</span>
@@ -141,6 +142,7 @@ export default function Navbar({
           className="btn btn-secondary"
           style={{ padding: '6px 10px', fontSize: '0.75rem' }}
           title="View system health & diagnostics"
+          aria-label="View system health and diagnostics"
         >
           <Activity size={14} color="var(--accent-cyan)" />
           <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -185,6 +187,7 @@ export default function Navbar({
                 alignItems: 'center'
               }}
               title="Sign Out"
+              aria-label="Sign Out"
             >
               <LogOut size={15} />
             </button>

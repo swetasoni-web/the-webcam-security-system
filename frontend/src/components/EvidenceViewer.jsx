@@ -53,6 +53,8 @@ export default function EvidenceViewer({ cameras }) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <select 
+            id="evidence-camera-filter"
+            aria-label="Filter evidence by camera"
             value={cameraFilter} 
             onChange={(e) => setCameraFilter(e.target.value)}
             className="form-input" 

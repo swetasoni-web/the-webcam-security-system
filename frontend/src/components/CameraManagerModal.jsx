@@ -182,6 +182,7 @@ export default function CameraManagerModal({ isOpen, onClose, cameras, onCameras
             onClick={onClose}
             className="btn btn-secondary"
             style={{ padding: '6px', borderRadius: '50%' }}
+            aria-label="Close Camera Manager"
           >
             <X size={16} />
           </button>
@@ -444,6 +445,9 @@ export default function CameraManagerModal({ isOpen, onClose, cameras, onCameras
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <input
+                      id="phone-ip-input"
+                      name="phoneIp"
+                      aria-label="Phone IP Address"
                       type="text"
                       className="form-input"
                       style={{ width: '150px', padding: '6px 10px', fontSize: '0.8rem' }}
@@ -473,8 +477,10 @@ export default function CameraManagerModal({ isOpen, onClose, cameras, onCameras
 
               {/* Camera Name */}
               <div>
-                <label className="form-label">Camera Name</label>
+                <label htmlFor="new-camera-name" className="form-label">Camera Name</label>
                 <input
+                  id="new-camera-name"
+                  name="newCameraName"
                   type="text"
                   className="form-input"
                   placeholder="e.g. Front Gate Camera, Hallway Cam, Phone 1"
@@ -486,13 +492,15 @@ export default function CameraManagerModal({ isOpen, onClose, cameras, onCameras
 
               {/* Source URL / Index */}
               <div>
-                <label className="form-label">
+                <label htmlFor="new-camera-url" className="form-label">
                   {newCamType === 'WEBCAM' ? 'Webcam Device Index (0 for built-in, 1 or 2 for USB)' :
                    newCamType === 'RTSP' ? 'Stream URL (rtsp:// or http://)' :
                    newCamType === 'RECORDED' ? 'Local Video File Path (.mp4, .avi)' : 'Simulation URL'}
                 </label>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input
+                    id="new-camera-url"
+                    name="newCameraUrl"
                     type="text"
                     className="form-input"
                     placeholder={
