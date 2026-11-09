@@ -15,3 +15,4 @@
 - `GET /api/cameras`: Camera registry and device source management.
 - `POST /api/stream/{camera_id}/ingest_frame`: Real-time external video frame processing.
 - `GET /api/alerts`: Real-time and historical security alerts.
+

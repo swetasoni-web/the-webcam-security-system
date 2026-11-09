@@ -86,29 +86,44 @@ class FaceRecognitionPipeline:
             self.load_error = str(e)
             logger.error(f"Failed to initialize Face Pipeline: {e}")
 
-    def detect_faces(self, frame: np.ndarray) -> List[List[int]]:
+    def detect_faces(self, frame: np.ndarray, roi: Optional[List[int]] = None) -> List[List[int]]:
         """
-        Detect face bounding boxes in a BGR frame.
-        Returns list of [x1, y1, x2, y2].
+        Detect face bounding boxes in a BGR frame, optionally restricted to an ROI [x1, y1, x2, y2].
+        Returns list of global [x1, y1, x2, y2].
         """
-        if not self.is_loaded or self.face_cascade is None or frame is None:
+        if not self.is_loaded or self.face_cascade is None or frame is None or frame.size == 0:
             return []
 
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.equalizeHist(gray)
+        h, w = frame.shape[:2]
+        if roi is not None and len(roi) >= 4:
+            rx1, ry1, rx2, ry2 = [int(v) for v in roi[:4]]
+            rx1, ry1 = max(0, rx1), max(0, ry1)
+            rx2, ry2 = min(w, rx2), min(h, ry2)
+            if (rx2 - rx1) < 20 or (ry2 - ry1) < 20:
+                return []
+            sub_frame = frame[ry1:ry2, rx1:rx2]
+            gray = cv2.cvtColor(sub_frame, cv2.COLOR_BGR2GRAY)
+            faces = self.face_cascade.detectMultiScale(
+                gray,
+                scaleFactor=1.15,
+                minNeighbors=4,
+                minSize=(20, 20),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
+            return [[int(rx1 + x), int(ry1 + y), int(rx1 + x + fw), int(ry1 + y + fh)] for (x, y, fw, fh) in faces]
 
-        # Scale factor 1.1, minNeighbors 4, minSize 24x24
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.face_cascade.detectMultiScale(
             gray,
-            scaleFactor=1.1,
+            scaleFactor=1.15,
             minNeighbors=4,
             minSize=(24, 24),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
 
         boxes = []
-        for (x, y, w, h) in faces:
-            boxes.append([int(x), int(y), int(x + w), int(y + h)])
+        for (x, y, fw, fh) in faces:
+            boxes.append([int(x), int(y), int(x + fw), int(y + fh)])
         return boxes
 
     def compute_embedding(self, face_bgr: np.ndarray) -> Optional[np.ndarray]:
@@ -127,7 +142,7 @@ class FaceRecognitionPipeline:
             pil_img = Image.fromarray(face_rgb)
             tensor = self.transform(pil_img).unsqueeze(0)  # Shape: (1, 3, 160, 160)
 
-            with torch.no_grad():
+            with torch.inference_mode():
                 feat = self.feature_extractor(tensor)  # Shape: (1, 512, 1, 1)
                 feat = torch.flatten(feat, 1)          # Shape: (1, 512)
                 # L2 normalize
@@ -190,28 +205,41 @@ class FaceRecognitionPipeline:
                 "confidence": confidence,
             }
 
-    def process_frame(self, frame: np.ndarray, enrolled_faces: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def process_frame(
+        self,
+        frame: np.ndarray,
+        enrolled_faces: List[Dict[str, Any]],
+        person_boxes: Optional[List[List[int]]] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Full frame face detection and recognition pass.
-        Returns list of detected faces with bounding box, recognized identity, and confidence.
+        Ultra-fast face detection & recognition pass.
+        - Zero CPU overhead when no face database is enrolled (returns [] in 0.0ms).
+        - When faces are enrolled, restricts Haar search to the top 55% head region of YOLO person boxes.
         """
-        results = []
-        boxes = self.detect_faces(frame)
+        # Fast path: Zero CPU overhead if no face database is enrolled
+        if not enrolled_faces or frame is None or frame.size == 0:
+            return []
+
         h, w = frame.shape[:2]
+        boxes: List[List[int]] = []
 
-        # Fast path: Skip expensive ResNet-18 deep CNN inference if no face database is enrolled
-        if not enrolled_faces:
-            return [
-                {
-                    "bbox": [max(0, b[0]), max(0, b[1]), min(w, b[2]), min(h, b[3])],
-                    "is_known": False,
-                    "name": "Person",
-                    "identity_code": None,
-                    "confidence": 0.90,
-                }
-                for b in boxes if (b[2] - b[0]) >= 15 and (b[3] - b[1]) >= 15
-            ]
+        if person_boxes:
+            # Targeted scan inside each detected person's head region
+            for pbox in person_boxes:
+                px1, py1, px2, py2 = [int(v) for v in pbox[:4]]
+                pw = px2 - px1
+                ph = py2 - py1
+                if pw < 20 or ph < 20:
+                    continue
+                # Upper 55% corresponds to head & shoulders
+                head_roi = [px1, py1, px2, py1 + int(ph * 0.55)]
+                faces_in_roi = self.detect_faces(frame, roi=head_roi)
+                boxes.extend(faces_in_roi)
+        else:
+            # Fallback: scan frame
+            boxes = self.detect_faces(frame)
 
+        results = []
         for bbox in boxes:
             x1, y1, x2, y2 = bbox
             # Safe clamping
@@ -223,14 +251,14 @@ class FaceRecognitionPipeline:
 
             face_crop = frame[y1:y2, x1:x2]
             emb = self.compute_embedding(face_crop)
-            
-            match_res = self.match_face(emb, enrolled_faces)
-            results.append({
-                "bbox": [x1, y1, x2, y2],
-                "is_known": match_res["is_known"],
-                "name": match_res["name"],
-                "identity_code": match_res["identity_code"],
-                "confidence": match_res["confidence"],
-            })
+            if emb is not None:
+                match_res = self.match_face(emb, enrolled_faces)
+                results.append({
+                    "bbox": [x1, y1, x2, y2],
+                    "is_known": match_res["is_known"],
+                    "name": match_res["name"],
+                    "identity_code": match_res["identity_code"],
+                    "confidence": match_res["confidence"],
+                })
 
         return results

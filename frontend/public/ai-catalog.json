@@ -18,3 +18,4 @@
     "ingest_frame": "/api/stream/{camera_id}/ingest_frame"
   }
 }
+

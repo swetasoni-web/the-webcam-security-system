@@ -106,19 +106,17 @@ class SurveillancePipeline:
         """
         Process a single live frame streamed directly from any client device (laptop, PC, or Android phone).
         Executes YOLOv8 detection, multi-object tracking, face recognition, restricted zone evaluation,
-        and triggers security alerts.
+        and triggers security alerts directly on native resolution (zero resize overhead).
         """
         if raw_frame is None or raw_frame.size == 0:
             return {"success": False, "error": "Invalid frame"}
 
-        # Normalize dimensions
-        if raw_frame.shape[1] != self.width or raw_frame.shape[0] != self.height:
-            raw_frame = cv2.resize(raw_frame, (self.width, self.height))
+        frame_h, frame_w = raw_frame.shape[:2]
 
-        # Ingest into capture manager for background MJPEG broadcast
+        # Ingest into capture manager for background MJPEG broadcast (handles its own buffer copy)
         self.capture_mgr.inject_frame(raw_frame)
 
-        # 1. Object Detection (YOLO)
+        # 1. Object Detection (YOLO) directly on native frame (e.g. 320x240)
         t_infer_start = time.time()
         detections = self.yolo_detector.detect(raw_frame)
         self.last_inference_ms = round((time.time() - t_infer_start) * 1000, 1)
@@ -126,21 +124,27 @@ class SurveillancePipeline:
         # 2. Tracking
         tracks = self.tracker.update(detections)
 
-        # 3. Face Recognition
+        # 3. Face Recognition (Ultra-fast: 0.0ms if no faces enrolled; targeted to person ROI if enrolled)
         with self.lock:
             current_enrolled = list(self.enrolled_faces)
             current_zones = list(self.zones)
             current_rules = list(self.rules)
 
-        face_results = self.face_pipeline.process_frame(raw_frame, current_enrolled)
-        self.tracker.link_face_to_track(face_results)
+        person_boxes = [t.bbox for t in tracks if t.class_name == "person"]
+        face_results = self.face_pipeline.process_frame(
+            raw_frame,
+            current_enrolled,
+            person_boxes=person_boxes
+        )
+        if face_results:
+            self.tracker.link_face_to_track(face_results)
 
-        # 4. Restricted Zone Intrusion Evaluation
+        # 4. Restricted Zone Intrusion Evaluation (Normalized 0..1 coordinates)
         zone_events = self.zone_engine.evaluate_tracks_in_zones(
             tracks=tracks,
             zones=current_zones,
-            frame_width=self.width,
-            frame_height=self.height
+            frame_width=frame_w,
+            frame_height=frame_h
         )
 
         # 5. Security Rule Engine Evaluation
@@ -168,8 +172,8 @@ class SurveillancePipeline:
         return {
             "success": True,
             "inference_ms": self.last_inference_ms,
-            "frame_width": int(raw_frame.shape[1]),
-            "frame_height": int(raw_frame.shape[0]),
+            "frame_width": int(frame_w),
+            "frame_height": int(frame_h),
             "detections": [
                 {
                     "track_id": t.track_id,
@@ -222,10 +226,16 @@ class SurveillancePipeline:
             with self.lock:
                 current_enrolled = list(self.enrolled_faces)
             
-            # Detect faces on frame
-            face_results = self.face_pipeline.process_frame(raw_frame, current_enrolled)
+            # Detect faces on frame (pass person boxes for fast ROI detection)
+            person_boxes = [t.bbox for t in tracks if t.class_name == "person"]
+            face_results = self.face_pipeline.process_frame(
+                raw_frame,
+                current_enrolled,
+                person_boxes=person_boxes
+            )
             # Link recognized faces to person tracks
-            self.tracker.link_face_to_track(face_results)
+            if face_results:
+                self.tracker.link_face_to_track(face_results)
 
             # 4. Restricted Zone Intrusion Evaluation
             with self.lock:

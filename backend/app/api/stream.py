@@ -141,11 +141,7 @@ async def ingest_frame(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Ingest and process a single live video frame directly from any client device
-    (Laptop built-in webcam, USB camera on PC, or Android / iPhone browser camera).
-    Runs real-time YOLOv8, Face Recognition, Tracking, Zone intrusion checks, and Security Rules.
-    """
+    
     # 1. Fast in-memory pipeline lookup (avoids DB latency on every frame)
     pipe = pipeline_registry.get(camera_id)
     if not pipe or not pipe.is_running:
@@ -226,8 +222,8 @@ async def ingest_frame(
         return {
             "success": True,
             "inference_ms": pipe.last_inference_ms,
-            "frame_width": pipe.width,
-            "frame_height": pipe.height,
+            "frame_width": int(frame.shape[1]),
+            "frame_height": int(frame.shape[0]),
             "detections": cached_tracks,
             "faces": [],
             "zone_events": cached_zones,

@@ -231,10 +231,10 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       }
 
       inFlight = true;
-      let nextDelay = 120; // Default: ~8 FPS (ideal real-time cadence on cloud free-tier)
+      let nextDelay = 60; // Ultra-responsive cadence (~12-15 FPS) with accelerated AI engine
       try {
         offCtx.drawImage(video, 0, 0, 320, 240);
-        const dataUrl = offscreen.toDataURL('image/jpeg', 0.55);
+        const dataUrl = offscreen.toDataURL('image/jpeg', 0.52);
 
         const targetCamId = activeCamera?.id || 1;
         const res = await api.ingestFrame(targetCamId, { image_base64: dataUrl });
@@ -242,7 +242,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
           setAiServerStatus('ACTIVE');
           setAiServerMessage(`Infer: ${res.inference_ms || 0}ms`);
           setLastInferenceMs(res.inference_ms || 0);
-          nextDelay = 120;
+          nextDelay = res.skipped ? 80 : 55;
 
           const combined = [...(res.detections || [])];
           if (res.faces && res.faces.length > 0) {
