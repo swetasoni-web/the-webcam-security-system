@@ -193,6 +193,19 @@ class FaceRecognitionPipeline:
         boxes = self.detect_faces(frame)
         h, w = frame.shape[:2]
 
+        # Fast path: Skip expensive ResNet-18 deep CNN inference if no face database is enrolled
+        if not enrolled_faces:
+            return [
+                {
+                    "bbox": [max(0, b[0]), max(0, b[1]), min(w, b[2]), min(h, b[3])],
+                    "is_known": False,
+                    "name": "Person",
+                    "identity_code": None,
+                    "confidence": 0.90,
+                }
+                for b in boxes if (b[2] - b[0]) >= 15 and (b[3] - b[1]) >= 15
+            ]
+
         for bbox in boxes:
             x1, y1, x2, y2 = bbox
             # Safe clamping

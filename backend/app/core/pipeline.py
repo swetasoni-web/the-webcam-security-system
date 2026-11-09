@@ -159,20 +159,17 @@ class SurveillancePipeline:
                 except Exception as e:
                     logger.error(f"Error executing alert callback: {e}")
 
-        # 6. Render HUD Overlays onto annotated_frame
-        annotated_frame = raw_frame.copy()
-        self._render_hud(annotated_frame, current_zones, tracks, zone_events, face_results)
-
-        # Store updated buffers
+        # Store updated buffers (skip heavy HUD drawing on external JSON stream for maximum speed)
         with self.lock:
             self.latest_raw_frame = raw_frame
-            self.latest_annotated_frame = annotated_frame
             self.active_tracks = [t.to_dict() for t in tracks]
             self.active_zone_events = zone_events
 
         return {
             "success": True,
             "inference_ms": self.last_inference_ms,
+            "frame_width": int(raw_frame.shape[1]),
+            "frame_height": int(raw_frame.shape[0]),
             "detections": [
                 {
                     "track_id": t.track_id,
