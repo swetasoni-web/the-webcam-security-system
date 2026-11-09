@@ -233,15 +233,20 @@ def root():
 
 # --- Serve React SPA (production static files) ---
 FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+assets_dir = FRONTEND_DIST / "assets"
+
+if assets_dir.exists() and assets_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
 if FRONTEND_DIST.exists():
-    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIST / "assets")), name="assets")
-
     @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_spa(full_path: str):
         """Serve React SPA — catch-all for client-side routing."""
         requested = FRONTEND_DIST / full_path
         if requested.exists() and requested.is_file():
             return FileResponse(str(requested))
-        return FileResponse(str(FRONTEND_DIST / "index.html"))
+        index_file = FRONTEND_DIST / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        return {"message": "Frontend build not present"}
 

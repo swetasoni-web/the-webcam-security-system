@@ -31,7 +31,7 @@ class YOLODetector:
         67: "cell phone",
     }
 
-    def __init__(self, model_name: str = "yolov8n.pt", confidence_threshold: float = 0.40):
+    def __init__(self, model_name: str = "yolov8n.pt", confidence_threshold: float = 0.35):
         self.model_name = model_name
         self.confidence_threshold = confidence_threshold
         self.model: Optional[YOLO] = None

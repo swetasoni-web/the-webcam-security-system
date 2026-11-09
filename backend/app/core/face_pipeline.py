@@ -75,12 +75,12 @@ class FaceRecognitionPipeline:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.equalizeHist(gray)
 
-        # Scale factor 1.1, minNeighbors 5, minSize 30x30
+        # Scale factor 1.1, minNeighbors 4, minSize 24x24
         faces = self.face_cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(30, 30),
+            minNeighbors=4,
+            minSize=(24, 24),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
 

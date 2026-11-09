@@ -75,7 +75,7 @@ export default function Navbar({
       </div>
 
       {/* Main Navigation Tabs */}
-      <nav style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <nav className="nav-tabs-container" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -97,7 +97,8 @@ export default function Navbar({
                 cursor: 'pointer',
                 transition: 'all 0.15s ease',
                 outline: 'none',
-                position: 'relative'
+                position: 'relative',
+                whiteSpace: 'nowrap'
               }}
             >
               <Icon size={15} />

@@ -35,39 +35,50 @@ async function apiFetch(endpoint, options = {}) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  // 12-second abort timeout prevents frame hangs on Android mobile networks
+  const timeoutMs = options.timeoutMs || 12000;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const signal = options.signal || controller.signal;
 
-  if (response.status === 401) {
-    authStorage.clear();
-    // Do not reload automatically if already logging in
-    if (!endpoint.includes('/auth/login')) {
-      window.dispatchEvent(new CustomEvent('voltwatch_auth_expired'));
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+      signal,
+    });
+
+    if (response.status === 401) {
+      authStorage.clear();
+      // Do not reload automatically if already logging in
+      if (!endpoint.includes('/auth/login')) {
+        window.dispatchEvent(new CustomEvent('voltwatch_auth_expired'));
+      }
     }
-  }
 
-  if (!response.ok) {
-    let errMessage = `Error ${response.status}: ${response.statusText}`;
-    if (response.status === 502 || response.status === 504) {
-      errMessage = 'Backend server is not running on http://127.0.0.1:8000. Please start the backend server.';
-    } else {
-      try {
-        const errData = await response.json();
-        if (errData && errData.detail) {
-          errMessage = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
-        }
-      } catch {}
+    if (!response.ok) {
+      let errMessage = `Error ${response.status}: ${response.statusText}`;
+      if (response.status === 502 || response.status === 504) {
+        errMessage = 'Backend server is not running on http://127.0.0.1:8000. Please start the backend server.';
+      } else {
+        try {
+          const errData = await response.json();
+          if (errData && errData.detail) {
+            errMessage = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
+          }
+        } catch {}
+      }
+      throw new Error(errMessage);
     }
-    throw new Error(errMessage);
-  }
 
-  if (response.status === 204) {
-    return null;
-  }
+    if (response.status === 204) {
+      return null;
+    }
 
-  return response.json();
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export const api = {

@@ -280,3 +280,50 @@ h1, h2, h3, h4 {
   color: var(--text-secondary);
   margin-bottom: 5px;
 }
+
+/* ==========================================================================
+   Mobile & Responsive Adaptations (Android Phones, Tablets & PC Screens)
+   ========================================================================== */
+.monitor-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  padding: 0 16px 20px;
+}
+
+@media (max-width: 960px) {
+  .monitor-grid {
+    grid-template-columns: 1fr !important;
+    padding: 0 10px 16px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  header.glass-panel {
+    margin: 6px 10px !important;
+    padding: 8px 12px !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  .nav-tabs-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    width: 100% !important;
+    padding-bottom: 4px !important;
+    scrollbar-width: none;
+  }
+
+  .nav-tabs-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .device-cam-controls {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .camera-viewport {
+    height: 380px !important;
+  }
+}

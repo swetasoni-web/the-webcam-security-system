@@ -37,6 +37,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   const [clientFps, setClientFps] = useState(0);
   const [latestDetections, setLatestDetections] = useState([]);
   const [deviceCamAlert, setDeviceCamAlert] = useState(null);
+  const [aiServerStatus, setAiServerStatus] = useState('STANDBY'); // 'STANDBY' | 'CONNECTING' | 'ACTIVE' | 'ERROR'
+  const [aiServerMessage, setAiServerMessage] = useState('');
 
   const videoContainerRef = useRef(null);
   const localVideoRef = useRef(null);
@@ -172,6 +174,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     setIsDeviceCamActive(false);
     setLatestDetections([]);
     setDeviceCamAlert(null);
+    setAiServerStatus('STANDBY');
+    setAiServerMessage('');
     const canvas = overlayCanvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -210,7 +214,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     const sendFrame = async () => {
       if (!isRunning) return;
       const video = localVideoRef.current;
-      if (!video || video.readyState < 2 || video.paused || video.ended || inFlight) {
+      if (!video || !video.videoWidth || !video.videoHeight || video.readyState < 2 || video.paused || video.ended || inFlight) {
         if (isRunning) requestAnimationFrame(() => setTimeout(sendFrame, 100));
         return;
       }
@@ -223,6 +227,9 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         const targetCamId = activeCamera?.id || 1;
         const res = await api.ingestFrame(targetCamId, { image_base64: dataUrl });
         if (isRunning && res && res.success) {
+          setAiServerStatus('ACTIVE');
+          setAiServerMessage(`Infer: ${res.inference_ms || 0}ms`);
+
           const combined = [...(res.detections || [])];
           if (res.faces && res.faces.length > 0) {
             res.faces.forEach((f, idx) => {
@@ -261,6 +268,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         }
       } catch (err) {
         console.debug('Frame ingestion error:', err);
+        setAiServerStatus('CONNECTING');
+        setAiServerMessage('Connecting to AI cloud service (Render waking up, please wait ~20s)...');
       } finally {
         inFlight = false;
         if (isRunning) {
@@ -287,8 +296,32 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     const height = canvas.height = canvas.clientHeight || 480;
     ctx.clearRect(0, 0, width, height);
 
-    const scaleX = width / 640;
-    const scaleY = height / 480;
+    // Compute exact video aspect ratio fit (handles pillarbox & letterbox on PC and Mobile)
+    const video = localVideoRef.current;
+    const vw = (video && video.videoWidth > 0) ? video.videoWidth : 640;
+    const vh = (video && video.videoHeight > 0) ? video.videoHeight : 480;
+    const videoAspect = vw / vh;
+    const containerAspect = width / height;
+
+    let renderW = width;
+    let renderH = height;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    if (containerAspect > videoAspect) {
+      // Container is wider than video -> pillarboxed (black bars on left & right)
+      renderH = height;
+      renderW = height * videoAspect;
+      offsetX = (width - renderW) / 2;
+    } else {
+      // Container is taller than video -> letterboxed (black bars on top & bottom)
+      renderW = width;
+      renderH = width / videoAspect;
+      offsetY = (height - renderH) / 2;
+    }
+
+    const scaleX = renderW / 640;
+    const scaleY = renderH / 480;
 
     // Draw Detections
     const detections = res.detections || [];
@@ -300,7 +333,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
       // Invert X when front selfie camera is mirrored via CSS scaleX(-1)
       const isMirrored = isDeviceCamActive && (facingModeRef.current === 'user');
-      const renderX = isMirrored ? (width - x2) : x1;
+      const renderX = offsetX + (isMirrored ? (renderW - x2) : x1);
+      const renderY = offsetY + y1;
 
       const isAuth = det.is_authorized === true;
       const isAlert = det.identity === 'UNAUTHORIZED' || det.is_authorized === false;
@@ -311,7 +345,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 2.5;
-      ctx.strokeRect(renderX, y1, boxW, boxH);
+      ctx.strokeRect(renderX, renderY, boxW, boxH);
 
       // Label text
       let label = `${det.class_name.toUpperCase()} ${Math.round((det.confidence || 0) * 100)}%`;
@@ -322,10 +356,10 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       ctx.font = 'bold 12px sans-serif';
       const textWidth = ctx.measureText(label).width;
       ctx.fillStyle = strokeColor;
-      ctx.fillRect(renderX, Math.max(0, y1 - 22), textWidth + 12, 22);
+      ctx.fillRect(renderX, Math.max(offsetY, renderY - 22), textWidth + 12, 22);
 
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(label, renderX + 6, Math.max(15, y1 - 6));
+      ctx.fillText(label, renderX + 6, Math.max(offsetY + 15, renderY - 6));
     });
 
     // Draw Face Target Overlays
@@ -336,7 +370,8 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       const fBoxW = fx2 - fx1;
       const fBoxH = fy2 - fy1;
       const isMirrored = isDeviceCamActive && (facingModeRef.current === 'user');
-      const fRenderX = isMirrored ? (width - fx2) : fx1;
+      const fRenderX = offsetX + (isMirrored ? (renderW - fx2) : fx1);
+      const fRenderY = offsetY + fy1;
 
       const isKnown = f.is_authorized === true;
       const faceColor = isKnown ? '#10B981' : '#F59E0B'; // Emerald if authorized, Amber if unrecognized
@@ -345,13 +380,13 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
       ctx.strokeStyle = faceColor;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 3]);
-      ctx.strokeRect(fRenderX, fy1, fBoxW, fBoxH);
+      ctx.strokeRect(fRenderX, fRenderY, fBoxW, fBoxH);
       ctx.restore();
 
       const faceLabel = `👤 ${f.identity || 'Person'} (${Math.round((f.confidence || 0) * 100)}%)`;
       ctx.font = '10px monospace';
       ctx.fillStyle = faceColor;
-      ctx.fillText(faceLabel, fRenderX, Math.max(12, fy1 - 4));
+      ctx.fillText(faceLabel, fRenderX, Math.max(offsetY + 12, fRenderY - 4));
     });
 
     // Top status indicator on canvas
@@ -407,7 +442,7 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
   const currentMode = isDeviceCamActive ? 'THIS DEVICE' : (telemetry?.mode || activeCamera?.source_type || 'DEMO');
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '16px', padding: '0 16px 20px' }}>
+    <div className="monitor-grid">
       {/* Left Column: Video Viewport & Controls */}
       <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         
@@ -579,10 +614,12 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
         {/* Video Canvas Container */}
         <div 
           ref={videoContainerRef}
+          className="camera-viewport"
           style={{
             position: 'relative',
             width: '100%',
-            height: '500px',
+            height: 'min(520px, 65vh)',
+            minHeight: '300px',
             backgroundColor: '#05070a',
             borderRadius: '10px',
             overflow: 'hidden',
@@ -635,18 +672,60 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              background: 'rgba(2, 132, 199, 0.85)',
-              color: '#fff',
-              padding: '4px 10px',
-              borderRadius: '6px',
-              fontSize: '0.72rem',
-              fontWeight: 600,
-              backdropFilter: 'blur(4px)',
-              letterSpacing: '0.04em',
+              flexWrap: 'wrap',
               zIndex: 10
             }}>
-              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981' }} />
-              LIVE HARDWARE WEBCAM ({facingMode.toUpperCase()})
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(2, 132, 199, 0.85)',
+                color: '#fff',
+                padding: '4px 10px',
+                borderRadius: '6px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                backdropFilter: 'blur(4px)',
+                letterSpacing: '0.04em'
+              }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981' }} />
+                LIVE HARDWARE WEBCAM ({facingMode.toUpperCase()})
+              </div>
+
+              {aiServerStatus === 'CONNECTING' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(245, 158, 11, 0.90)',
+                  color: '#fff',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 600,
+                  backdropFilter: 'blur(4px)'
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff' }} />
+                  AI CONNECTING...
+                </div>
+              )}
+              {aiServerStatus === 'ACTIVE' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.85)',
+                  color: '#fff',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 600,
+                  backdropFilter: 'blur(4px)'
+                }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#fff' }} />
+                  AI ACTIVE
+                </div>
+              )}
             </div>
           )}
 
@@ -790,8 +869,21 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
                   </div>
                 ))
               ) : (
-                <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                  Awaiting detections in camera frame...
+                <div style={{ padding: '20px 8px', textAlign: 'center', fontSize: '0.8rem' }}>
+                  {aiServerStatus === 'CONNECTING' ? (
+                    <div>
+                      <div style={{ color: 'var(--accent-amber)', fontWeight: 600, marginBottom: '6px' }}>
+                        ⏳ Connecting to Cloud AI Engine...
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>
+                        Free-tier cloud backend is spinning up. Please keep camera open for ~20-30 seconds.
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)' }}>
+                      Scanning camera frame... Bring a person, phone, or object into view.
+                    </div>
+                  )}
                 </div>
               )
             ) : telemetry?.active_tracks?.length > 0 ? (
