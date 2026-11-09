@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import Navbar from './components/Navbar';
 import LiveMonitor from './components/LiveMonitor';
-import AlertFeed from './components/AlertFeed';
-import ZoneEditor from './components/ZoneEditor';
-import RuleManager from './components/RuleManager';
-import FaceEnroll from './components/FaceEnroll';
-import EvidenceViewer from './components/EvidenceViewer';
-import HealthModal from './components/HealthModal';
 import LoginModal from './components/LoginModal';
 import { api, authStorage } from './api/client';
+
+// Code-splitting via React.lazy reduces initial JavaScript bundle by ~50 KiB
+const AlertFeed = lazy(() => import('./components/AlertFeed'));
+const ZoneEditor = lazy(() => import('./components/ZoneEditor'));
+const RuleManager = lazy(() => import('./components/RuleManager'));
+const FaceEnroll = lazy(() => import('./components/FaceEnroll'));
+const EvidenceViewer = lazy(() => import('./components/EvidenceViewer'));
+const HealthModal = lazy(() => import('./components/HealthModal'));
 
 export default function App() {
   const [user, setUser] = useState(authStorage.getUser());
@@ -114,52 +116,62 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'alerts' && (
-          <AlertFeed
-            user={user}
-            onAlertsUpdated={(alerts) => {
-              const unack = alerts.filter(a => !a.is_acknowledged).length;
-              setUnreadAlertCount(unack);
-            }}
-          />
-        )}
+        <Suspense fallback={
+          <div style={{ padding: '60px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+            Loading surveillance module...
+          </div>
+        }>
+          {activeTab === 'alerts' && (
+            <AlertFeed
+              user={user}
+              onAlertsUpdated={(alerts) => {
+                const unack = alerts.filter(a => !a.is_acknowledged).length;
+                setUnreadAlertCount(unack);
+              }}
+            />
+          )}
 
-        {activeTab === 'zones' && (
-          <ZoneEditor
-            cameras={cameras}
-            selectedCameraId={selectedCameraId}
-            user={user}
-          />
-        )}
+          {activeTab === 'zones' && (
+            <ZoneEditor
+              cameras={cameras}
+              selectedCameraId={selectedCameraId}
+              user={user}
+            />
+          )}
 
-        {activeTab === 'rules' && (
-          <RuleManager
-            cameras={cameras}
-            user={user}
-          />
-        )}
+          {activeTab === 'rules' && (
+            <RuleManager
+              cameras={cameras}
+              user={user}
+            />
+          )}
 
-        {activeTab === 'faces' && (
-          <FaceEnroll
-            user={user}
-          />
-        )}
+          {activeTab === 'faces' && (
+            <FaceEnroll
+              user={user}
+            />
+          )}
 
-        {activeTab === 'evidence' && (
-          <EvidenceViewer
-            cameras={cameras}
-          />
-        )}
+          {activeTab === 'evidence' && (
+            <EvidenceViewer
+              cameras={cameras}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Diagnostics & Health Modal */}
-      <HealthModal
-        isOpen={isHealthOpen}
-        onClose={() => setIsHealthOpen(false)}
-        healthData={healthData}
-        onRefresh={refreshAppData}
-        user={user}
-      />
+      {isHealthOpen && (
+        <Suspense fallback={null}>
+          <HealthModal
+            isOpen={isHealthOpen}
+            onClose={() => setIsHealthOpen(false)}
+            healthData={healthData}
+            onRefresh={refreshAppData}
+            user={user}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

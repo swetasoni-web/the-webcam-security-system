@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { 
   Play, 
   Square, 
@@ -19,7 +19,9 @@ import {
   Eye
 } from 'lucide-react';
 import { api } from '../api/client';
-import CameraManagerModal from './CameraManagerModal';
+
+// Lazy-load modal to reduce initial bundle
+const CameraManagerModal = lazy(() => import('./CameraManagerModal'));
 
 export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera, onNewAlert, onCamerasUpdated }) {
   const [telemetry, setTelemetry] = useState(null);
@@ -79,13 +81,19 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
     };
   }, [activeCamera?.id, isDeviceCamActive]);
 
-  // Clean up device camera stream on unmount
+  // Clean up device camera stream on unmount and pagehide (enables browser Back/Forward Cache - bfcache)
   useEffect(() => {
-    return () => {
+    const handlePageHide = () => {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach(t => t.stop());
         localStreamRef.current = null;
       }
+    };
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      handlePageHide();
     };
   }, []);
 
@@ -1028,14 +1036,16 @@ export default function LiveMonitor({ cameras, selectedCameraId, onSelectCamera,
 
       {/* Modal: Camera Source Setup */}
       {isCameraModalOpen && (
-        <CameraManagerModal
-          isOpen={isCameraModalOpen}
-          onClose={() => setIsCameraModalOpen(false)}
-          cameras={cameras}
-          onCamerasUpdated={onCamerasUpdated}
-          onSelectCamera={onSelectCamera}
-          activeCameraId={activeCamera?.id}
-        />
+        <Suspense fallback={null}>
+          <CameraManagerModal
+            isOpen={isCameraModalOpen}
+            onClose={() => setIsCameraModalOpen(false)}
+            cameras={cameras}
+            onCamerasUpdated={onCamerasUpdated}
+            onSelectCamera={onSelectCamera}
+            activeCameraId={activeCamera?.id}
+          />
+        </Suspense>
       )}
     </div>
   );

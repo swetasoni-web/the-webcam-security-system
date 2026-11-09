@@ -119,6 +119,8 @@ h1, h2, h3, h4 {
   border-radius: 50%;
   background-color: var(--accent-emerald);
   display: inline-block;
+  will-change: transform, opacity;
+  transform: translateZ(0);
   animation: pulse-live 2s infinite ease-in-out;
 }
 
@@ -128,6 +130,8 @@ h1, h2, h3, h4 {
   border-radius: 50%;
   background-color: var(--accent-amber);
   display: inline-block;
+  will-change: transform, opacity;
+  transform: translateZ(0);
   animation: pulse-live 2s infinite ease-in-out;
 }
 

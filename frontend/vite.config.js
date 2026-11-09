@@ -20,6 +20,15 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,  // Disable sourcemaps in production for security
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('lucide-react')) {
+              return 'vendor-lucide';
+            }
+          }
+        }
+      }
     }
   }
 })
