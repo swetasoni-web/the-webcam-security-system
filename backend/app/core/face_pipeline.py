@@ -12,6 +12,16 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Safely import cv2 submodules at module scope (avoids Python UnboundLocalError in methods)
+try:
+    import cv2.objdetect
+except Exception:
+    pass
+try:
+    import cv2.data
+except Exception:
+    pass
+
 class FaceRecognitionPipeline:
     """
     Robust Face Detection & 512-dimensional Embedding Recognition Pipeline.
@@ -36,15 +46,11 @@ class FaceRecognitionPipeline:
             self.face_cascade = None
             cascade_path = None
             if hasattr(cv2, "data") and hasattr(cv2.data, "haarcascades"):
-                cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
 
             classifier_cls = getattr(cv2, "CascadeClassifier", None)
-            if classifier_cls is None:
-                try:
-                    import cv2.objdetect
-                    classifier_cls = getattr(cv2.objdetect, "CascadeClassifier", None)
-                except Exception:
-                    pass
+            if classifier_cls is None and hasattr(cv2, "objdetect"):
+                classifier_cls = getattr(cv2.objdetect, "CascadeClassifier", None)
 
             if classifier_cls and cascade_path and os.path.exists(cascade_path):
                 try:
